@@ -702,6 +702,8 @@ private:
                     t->render();
             }
         });
+        m_editTextAct = comment->addAction(tr("&Edit Text At Last Click..."),
+                                           [this] { editTextAtClick(); });
         m_signAct = comment->addAction(tr("Place &Signature Image At Last Click..."),
                                        [this] { placeSignature(); });
         comment->addSeparator();
@@ -1006,6 +1008,26 @@ private:
             t->afterStructureChange();
     }
 
+    void editTextAtClick() {
+        auto* t = tab();
+        if (!t)
+            return;
+        int idx = -1;
+        const QString current = t->doc().textObjectAt(t->page(), t->lastClickPagePt(), &idx);
+        if (idx < 0) {
+            statusBar()->showMessage(
+                tr("Click a text run first (select tool), then Edit Text"));
+            return;
+        }
+        bool ok = false;
+        const QString edited =
+            QInputDialog::getText(this, tr("Edit Text"),
+                                  tr("Replace text (clear to delete):"), QLineEdit::Normal,
+                                  current, &ok);
+        if (ok && t->doc().setTextObject(t->page(), idx, edited))
+            t->render();
+    }
+
     void placeSignature() {
         auto* t = tab();
         if (!t)
@@ -1295,7 +1317,8 @@ private:
               m_splitAct, m_flattenAct, m_highlightAct, m_noteAct, m_squareAct,
               m_toImagesAct, m_toJpgAct, m_toTextAct, m_copyAct, m_redactAct, m_compareAct,
               m_copyFileAct, m_copyPathAct, m_revealAct, m_cropAct, m_moveAct,
-              m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct})
+              m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct,
+              m_editTextAct})
             a->setEnabled(loaded);
 #ifdef ANGRA_HAVE_QPDF
         for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
@@ -1343,7 +1366,7 @@ private:
             *m_copyPathAct = nullptr, *m_revealAct = nullptr, *m_toJpgAct = nullptr,
             *m_cropAct = nullptr, *m_moveAct = nullptr, *m_pageNumAct = nullptr,
             *m_watermarkAct = nullptr, *m_extractImgAct = nullptr, *m_addTextAct = nullptr,
-            *m_signAct = nullptr;
+            *m_signAct = nullptr, *m_editTextAct = nullptr;
 #ifdef ANGRA_HAVE_QPDF
     QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
             *m_optimizeAct = nullptr, *m_repairAct = nullptr;

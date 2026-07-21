@@ -151,6 +151,28 @@ int main(int argc, char** argv) {
         CHECK(re.pageText(0).contains(QStringLiteral("stamped")));
         CHECK(re.extractImages(0, tmp, QStringLiteral("angra-test-extract")) >= 1);
     }
+    {
+        // edit existing text: create a page with known text, find it, replace it
+        PdfDocument d;
+        CHECK(d.createEmpty());
+        CHECK(d.addTextPage({QStringLiteral("editme")}));
+        const QSizeF pts = d.pageSizePoints(0);
+        // text sits near top-left margin (54pt, ~ top); probe a band of y values
+        int idx = -1;
+        QString found;
+        for (int y = 40; y < 120 && idx < 0; y += 4)
+            found = d.textObjectAt(0, QPointF(70, y), &idx);
+        CHECK(idx >= 0);
+        CHECK(found.contains(QStringLiteral("editme")));
+        CHECK(d.setTextObject(0, idx, QStringLiteral("changed")));
+        const QString path = tmp + QStringLiteral("/angra-test-edit.pdf");
+        CHECK(d.saveCopy(path));
+        PdfDocument re;
+        CHECK(re.load(path) == PdfDocument::Status::Ok);
+        CHECK(re.pageText(0).contains(QStringLiteral("changed")));
+        CHECK(!re.pageText(0).contains(QStringLiteral("editme")));
+        (void)pts;
+    }
     PdfDocument::shutdownLibrary();
     std::puts("ok");
     return 0;

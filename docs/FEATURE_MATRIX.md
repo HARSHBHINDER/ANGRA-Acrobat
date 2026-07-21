@@ -15,6 +15,7 @@
 | Convert: images/text -> PDF; PDF -> PNG/JPG/text | UI + CLI |
 | Crop page, rearrange (move page), extract embedded images | |
 | Add page numbers, text watermark, free text, place signature image | |
+| Edit existing text (replace/delete a text run) + add text | PDFium text objects |
 | CLI batch | --to-text, --to-images, --merge |
 | Redaction | rasterize-and-replace page; text provably destroyed (tested) |
 | Encryption (AES-256), decrypt, sanitize, optimize, repair | via qpdf; build-optional (QPDF_DIR), CI enables it |

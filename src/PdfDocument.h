@@ -80,6 +80,12 @@ public:
     bool addPageNumbers();                    // bottom-center, every page
     bool addTextWatermark(const QString& text); // diagonal gray, every page
     bool addTextAt(int pageIndex, const QPointF& pagePt, const QString& text);
+
+    // Edit existing text: find the topmost text object under a click, read its
+    // string, then replace (empty text deletes the object). objIndex is the
+    // page-object index returned by textObjectAt.
+    QString textObjectAt(int pageIndex, const QPointF& pagePt, int* objIndex) const;
+    bool setTextObject(int pageIndex, int objIndex, const QString& text);
     bool placeImage(int pageIndex, const QImage& image, const QPointF& pagePt,
                     double widthPt); // signature/stamp placement
     int extractImages(int pageIndex, const QString& dirPath,

@@ -590,6 +590,63 @@ bool PdfDocument::addTextAt(int pageIndex, const QPointF& pagePt, const QString&
     return true;
 }
 
+QString PdfDocument::textObjectAt(int pageIndex, const QPointF& pagePt, int* objIndex) const {
+    if (objIndex)
+        *objIndex = -1;
+    if (!m_doc)
+        return {};
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return {};
+    TextPage tp(page.p);
+    if (!tp)
+        return {};
+    const double h = FPDF_GetPageHeightF(page.p);
+    const double px = pagePt.x(), py = h - pagePt.y(); // to PDF coords
+    const int count = FPDFPage_CountObjects(page.p);
+    // topmost = last in draw order; scan back to front
+    for (int i = count - 1; i >= 0; --i) {
+        FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, i);
+        if (FPDFPageObj_GetType(obj) != FPDF_PAGEOBJ_TEXT)
+            continue;
+        float l, b, r, t;
+        if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
+            continue;
+        if (px < l || px > r || py < b || py > t)
+            continue;
+        const unsigned long bytes = FPDFTextObj_GetText(obj, tp.t, nullptr, 0);
+        if (bytes < 2)
+            return {};
+        QVarLengthArray<unsigned short, 256> buf(bytes / 2);
+        FPDFTextObj_GetText(obj, tp.t, buf.data(), bytes);
+        if (objIndex)
+            *objIndex = i;
+        return fromUtf16Buffer(buf, bytes);
+    }
+    return {};
+}
+
+bool PdfDocument::setTextObject(int pageIndex, int objIndex, const QString& text) {
+    if (!m_doc || objIndex < 0)
+        return false;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return false;
+    FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, objIndex);
+    if (!obj || FPDFPageObj_GetType(obj) != FPDF_PAGEOBJ_TEXT)
+        return false;
+    if (text.isEmpty()) { // delete
+        if (!FPDFPage_RemoveObject(page.p, obj))
+            return false;
+        FPDFPageObj_Destroy(obj);
+    } else if (!FPDFText_SetText(obj, wide(text))) {
+        return false;
+    }
+    FPDFPage_GenerateContent(page.p);
+    m_modified = true;
+    return true;
+}
+
 bool PdfDocument::placeImage(int pageIndex, const QImage& image, const QPointF& pagePt,
                              double widthPt) {
     if (!m_doc || image.isNull() || widthPt <= 0)
