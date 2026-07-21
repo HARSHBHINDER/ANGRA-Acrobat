@@ -630,6 +630,33 @@ private:
                                      [this] { mergeFiles(); });
         m_splitAct = docm->addAction(tr("&Split Into Single Pages..."), [this] { splitAll(); });
         docm->addSeparator();
+        m_cropAct = docm->addAction(tr("&Crop Page To Selection"), [this] {
+            if (auto* t = tab(); t && !t->selectionRects().isEmpty() &&
+                                 t->doc().cropPage(t->page(), t->selectionRects().first()))
+                t->afterStructureChange();
+            else
+                statusBar()->showMessage(tr("Select an area to crop to first"));
+        });
+        m_moveAct = docm->addAction(tr("&Rearrange: Move Page To..."), [this] { movePageTo(); });
+        m_pageNumAct = docm->addAction(tr("Add Page &Numbers"), [this] {
+            if (auto* t = tab(); t && t->doc().addPageNumbers()) {
+                t->render();
+                statusBar()->showMessage(tr("Page numbers added"));
+            }
+        });
+        m_watermarkAct = docm->addAction(tr("Add Text &Watermark..."), [this] {
+            if (auto* t = tab()) {
+                bool ok = false;
+                const QString text = QInputDialog::getText(this, tr("Watermark"),
+                                                           tr("Watermark text:"),
+                                                           QLineEdit::Normal, {}, &ok);
+                if (ok && !text.isEmpty() && t->doc().addTextWatermark(text))
+                    t->render();
+            }
+        });
+        m_extractImgAct = docm->addAction(tr("Extract &Images From Page..."),
+                                          [this] { extractPageImages(); });
+        docm->addSeparator();
         m_flattenAct = docm->addAction(tr("&Flatten Annotations"), [this] {
             if (auto* t = tab(); t && t->doc().flattenAllPages()) {
                 t->render();
@@ -664,6 +691,19 @@ private:
                 t->render();
             }
         });
+        m_addTextAct = comment->addAction(tr("Add &Text At Last Click..."), [this] {
+            if (auto* t = tab()) {
+                bool ok = false;
+                const QString text = QInputDialog::getText(this, tr("Add Text"),
+                                                           tr("Text:"), QLineEdit::Normal,
+                                                           {}, &ok);
+                if (ok && !text.isEmpty() &&
+                    t->doc().addTextAt(t->page(), t->lastClickPagePt(), text))
+                    t->render();
+            }
+        });
+        m_signAct = comment->addAction(tr("Place &Signature Image At Last Click..."),
+                                       [this] { placeSignature(); });
         comment->addSeparator();
         m_selectToolAct = comment->addAction(tr("&Select Tool"));
         m_inkToolAct = comment->addAction(tr("&Draw Ink Tool"));
@@ -683,7 +723,10 @@ private:
         QMenu* convert = menuBar()->addMenu(tr("Con&vert"));
         convert->addAction(tr("&Images to PDF..."), [this] { imagesToPdf(); });
         convert->addAction(tr("&Text File to PDF..."), [this] { textToPdf(); });
-        m_toImagesAct = convert->addAction(tr("PDF to I&mages..."), [this] { pdfToImages(); });
+        m_toImagesAct = convert->addAction(tr("PDF to P&NG..."),
+                                           [this] { pdfToImages(QStringLiteral("png")); });
+        m_toJpgAct = convert->addAction(tr("PDF to &JPG..."),
+                                        [this] { pdfToImages(QStringLiteral("jpg")); });
         m_toTextAct = convert->addAction(tr("PDF to Te&xt..."), [this] { pdfToText(); });
 
         // Protect
@@ -931,7 +974,7 @@ private:
             QMessageBox::warning(this, theme::kAppName, err);
     }
 
-    void pdfToImages() {
+    void pdfToImages(const QString& ext) {
         auto* t = tab();
         if (!t)
             return;
@@ -940,13 +983,57 @@ private:
             return;
         int okCount = 0;
         for (int i = 0; i < t->doc().pageCount(); ++i) {
-            const QImage img = t->doc().renderPage(i, 2.0); // 144 dpi
+            QImage img = t->doc().renderPage(i, 2.0); // 144 dpi
+            if (ext == QStringLiteral("jpg")) // JPG has no alpha; flatten onto white
+                img = img.convertToFormat(QImage::Format_RGB32);
             const QString dest = QDir(dir).filePath(
-                QStringLiteral("page-%1.png").arg(i + 1, 3, 10, QLatin1Char('0')));
+                QStringLiteral("page-%1.%2").arg(i + 1, 3, 10, QLatin1Char('0')).arg(ext));
             if (!img.isNull() && img.save(dest))
                 ++okCount;
         }
         statusBar()->showMessage(tr("Exported %1 images").arg(okCount));
+    }
+
+    void movePageTo() {
+        auto* t = tab();
+        if (!t || t->doc().pageCount() < 2)
+            return;
+        bool ok = false;
+        const int to = QInputDialog::getInt(this, tr("Move Page"),
+                                            tr("Move page %1 to position:").arg(t->page() + 1),
+                                            t->page() + 1, 1, t->doc().pageCount(), 1, &ok);
+        if (ok && t->doc().movePage(t->page(), to - 1))
+            t->afterStructureChange();
+    }
+
+    void placeSignature() {
+        auto* t = tab();
+        if (!t)
+            return;
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Signature Image"), {}, tr("Images (*.png *.jpg *.jpeg *.bmp)"));
+        if (path.isEmpty())
+            return;
+        const QImage sig(path);
+        if (sig.isNull()) {
+            QMessageBox::warning(this, theme::kAppName, tr("Cannot read image."));
+            return;
+        }
+        if (t->doc().placeImage(t->page(), sig, t->lastClickPagePt(), 144.0)) // ~2 inch wide
+            t->render();
+    }
+
+    void extractPageImages() {
+        auto* t = tab();
+        if (!t)
+            return;
+        const QString dir = QFileDialog::getExistingDirectory(this, tr("Extract Images To"));
+        if (dir.isEmpty())
+            return;
+        const int n = t->doc().extractImages(t->page(), dir,
+                                             QStringLiteral("page%1-img").arg(t->page() + 1));
+        statusBar()->showMessage(n ? tr("Extracted %1 images").arg(n)
+                                   : tr("No embedded images on this page"));
     }
 
     void pdfToText() {
@@ -1206,8 +1293,9 @@ private:
               m_fitWidthAct, m_findNextAct, m_propsAct, m_printAct, m_closeTabAct,
               m_rotateAct, m_deletePageAct, m_extractAct, m_insertAct, m_mergeAct,
               m_splitAct, m_flattenAct, m_highlightAct, m_noteAct, m_squareAct,
-              m_toImagesAct, m_toTextAct, m_copyAct, m_redactAct, m_compareAct,
-              m_copyFileAct, m_copyPathAct, m_revealAct})
+              m_toImagesAct, m_toJpgAct, m_toTextAct, m_copyAct, m_redactAct, m_compareAct,
+              m_copyFileAct, m_copyPathAct, m_revealAct, m_cropAct, m_moveAct,
+              m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct})
             a->setEnabled(loaded);
 #ifdef ANGRA_HAVE_QPDF
         for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
@@ -1252,7 +1340,10 @@ private:
             *m_squareAct = nullptr, *m_selectToolAct = nullptr, *m_inkToolAct = nullptr,
             *m_toImagesAct = nullptr, *m_toTextAct = nullptr, *m_copyAct = nullptr,
             *m_redactAct = nullptr, *m_compareAct = nullptr, *m_copyFileAct = nullptr,
-            *m_copyPathAct = nullptr, *m_revealAct = nullptr;
+            *m_copyPathAct = nullptr, *m_revealAct = nullptr, *m_toJpgAct = nullptr,
+            *m_cropAct = nullptr, *m_moveAct = nullptr, *m_pageNumAct = nullptr,
+            *m_watermarkAct = nullptr, *m_extractImgAct = nullptr, *m_addTextAct = nullptr,
+            *m_signAct = nullptr;
 #ifdef ANGRA_HAVE_QPDF
     QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
             *m_optimizeAct = nullptr, *m_repairAct = nullptr;

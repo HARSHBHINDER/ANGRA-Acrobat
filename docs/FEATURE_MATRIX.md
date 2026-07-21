@@ -12,7 +12,9 @@
 | Form filling | click + keyboard via PDFium formfill; values persist on save |
 | Page ops: delete, rotate, extract, insert, merge, split | |
 | Safe save | serialize -> validate -> atomic replace |
-| Convert: images/text -> PDF; PDF -> images/text | UI + CLI |
+| Convert: images/text -> PDF; PDF -> PNG/JPG/text | UI + CLI |
+| Crop page, rearrange (move page), extract embedded images | |
+| Add page numbers, text watermark, free text, place signature image | |
 | CLI batch | --to-text, --to-images, --merge |
 | Redaction | rasterize-and-replace page; text provably destroyed (tested) |
 | Encryption (AES-256), decrypt, sanitize, optimize, repair | via qpdf; build-optional (QPDF_DIR), CI enables it |

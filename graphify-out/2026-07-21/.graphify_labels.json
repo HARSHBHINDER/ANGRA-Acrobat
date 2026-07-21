@@ -20,6 +20,5 @@
   "18": "SECURITY.md",
   "19": "gen-checksums.ps1",
   "20": "gen-sbom.ps1",
-  "21": "make-portable.ps1",
-  "22": ".selectionRects"
+  "21": "make-portable.ps1"
 }

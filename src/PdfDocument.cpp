@@ -478,6 +478,171 @@ bool PdfDocument::redactRasterize(int pageIndex, const QList<QRectF>& rects) {
     return true;
 }
 
+bool PdfDocument::cropPage(int pageIndex, const QRectF& rect) {
+    if (!m_doc || rect.isEmpty())
+        return false;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return false;
+    const double h = FPDF_GetPageHeightF(page.p);
+    const float l = rect.left(), r = rect.right();
+    const float top = h - rect.top(), bottom = h - rect.bottom();
+    FPDFPage_SetMediaBox(page.p, l, bottom, r, top);
+    FPDFPage_SetCropBox(page.p, l, bottom, r, top);
+    m_modified = true;
+    return true;
+}
+
+bool PdfDocument::movePage(int from, int to) {
+    const int n = pageCount();
+    if (!m_doc || from == to || from < 0 || to < 0 || from >= n || to >= n)
+        return false;
+    QList<int> order;
+    for (int i = 0; i < n; ++i)
+        order << i;
+    order.move(from, to);
+    QByteArray range;
+    for (int i : order) {
+        if (!range.isEmpty())
+            range += ',';
+        range += QByteArray::number(i + 1);
+    }
+    FPDF_DOCUMENT nd = FPDF_CreateNewDocument();
+    if (!FPDF_ImportPages(nd, doc(m_doc), range.constData(), 0)) {
+        FPDF_CloseDocument(nd);
+        return false;
+    }
+    killForms();
+    FPDF_CloseDocument(doc(m_doc));
+    m_doc = nd;
+    m_data.clear(); // old backing buffer no longer needed; import deep-copies
+    if (FPDF_GetFormType(nd) != FORMTYPE_NONE)
+        initForms();
+    m_modified = true;
+    return true;
+}
+
+// Shared stamping core: x/y in PDF coords (bottom-left origin).
+static bool stampText(FPDF_DOCUMENT d, FPDF_PAGE page, const QString& text, float size,
+                      const QColor& color, double x, double y, bool diagonal) {
+    FPDF_PAGEOBJECT obj = FPDFPageObj_NewTextObj(d, "Helvetica", size);
+    if (!obj)
+        return false;
+    FPDFText_SetText(obj, reinterpret_cast<FPDF_WIDESTRING>(text.utf16()));
+    FPDFPageObj_SetFillColor(obj, color.red(), color.green(), color.blue(), color.alpha());
+    if (diagonal) {
+        const double c = 0.7071, s = 0.7071; // 45 degrees
+        FPDFPageObj_Transform(obj, c, s, -s, c, x, y);
+    } else {
+        FPDFPageObj_Transform(obj, 1, 0, 0, 1, x, y);
+    }
+    FPDFPage_InsertObject(page, obj);
+    FPDFPage_GenerateContent(page);
+    return true;
+}
+
+bool PdfDocument::addPageNumbers() {
+    if (!m_doc)
+        return false;
+    const int n = pageCount();
+    for (int i = 0; i < n; ++i) {
+        Page page(m_doc, i);
+        if (!page)
+            return false;
+        const double w = FPDF_GetPageWidthF(page.p);
+        if (!stampText(doc(m_doc), page.p, QString::number(i + 1), 11, Qt::black,
+                       w / 2 - 6, 24, false))
+            return false;
+    }
+    m_modified = true;
+    return true;
+}
+
+bool PdfDocument::addTextWatermark(const QString& text) {
+    if (!m_doc || text.isEmpty())
+        return false;
+    const int n = pageCount();
+    for (int i = 0; i < n; ++i) {
+        Page page(m_doc, i);
+        if (!page)
+            return false;
+        const double w = FPDF_GetPageWidthF(page.p);
+        const double h = FPDF_GetPageHeightF(page.p);
+        if (!stampText(doc(m_doc), page.p, text, 48, QColor(128, 128, 128, 90),
+                       w * 0.2, h * 0.3, true))
+            return false;
+    }
+    m_modified = true;
+    return true;
+}
+
+bool PdfDocument::addTextAt(int pageIndex, const QPointF& pagePt, const QString& text) {
+    if (!m_doc || text.isEmpty())
+        return false;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return false;
+    const double h = FPDF_GetPageHeightF(page.p);
+    if (!stampText(doc(m_doc), page.p, text, 12, Qt::black, pagePt.x(), h - pagePt.y(),
+                   false))
+        return false;
+    m_modified = true;
+    return true;
+}
+
+bool PdfDocument::placeImage(int pageIndex, const QImage& image, const QPointF& pagePt,
+                             double widthPt) {
+    if (!m_doc || image.isNull() || widthPt <= 0)
+        return false;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return false;
+    const double h = FPDF_GetPageHeightF(page.p);
+    const double hPt = widthPt * image.height() / image.width();
+    QImage img = image.convertToFormat(QImage::Format_ARGB32);
+    FPDF_BITMAP bmp = FPDFBitmap_CreateEx(img.width(), img.height(), FPDFBitmap_BGRA,
+                                          img.bits(), img.bytesPerLine());
+    FPDF_PAGEOBJECT obj = FPDFPageObj_NewImageObj(doc(m_doc));
+    FPDFImageObj_SetBitmap(&page.p, 1, obj, bmp);
+    FPDFPageObj_Transform(obj, widthPt, 0, 0, hPt, pagePt.x(), h - pagePt.y() - hPt);
+    FPDFPage_InsertObject(page, obj);
+    FPDFPage_GenerateContent(page);
+    FPDFBitmap_Destroy(bmp);
+    m_modified = true;
+    return true;
+}
+
+int PdfDocument::extractImages(int pageIndex, const QString& dirPath,
+                               const QString& baseName) const {
+    if (!m_doc)
+        return 0;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return 0;
+    int saved = 0;
+    const int count = FPDFPage_CountObjects(page.p);
+    for (int i = 0; i < count; ++i) {
+        FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, i);
+        if (FPDFPageObj_GetType(obj) != FPDF_PAGEOBJ_IMAGE)
+            continue;
+        FPDF_BITMAP bmp = FPDFImageObj_GetRenderedBitmap(doc(m_doc), page.p, obj);
+        if (!bmp)
+            continue;
+        if (FPDFBitmap_GetFormat(bmp) == FPDFBitmap_BGRA) {
+            const QImage img(static_cast<const uchar*>(FPDFBitmap_GetBuffer(bmp)),
+                             FPDFBitmap_GetWidth(bmp), FPDFBitmap_GetHeight(bmp),
+                             FPDFBitmap_GetStride(bmp), QImage::Format_ARGB32);
+            const QString dest = QStringLiteral("%1/%2-%3.png")
+                                     .arg(dirPath, baseName)
+                                     .arg(saved + 1, 3, 10, QLatin1Char('0'));
+            if (img.copy().save(dest)) // copy() detaches before bitmap destroy
+                ++saved;
+        }
+        FPDFBitmap_Destroy(bmp);
+    }
+    return saved;
+}
+
 bool PdfDocument::flattenAllPages() {
     if (!m_doc)
         return false;

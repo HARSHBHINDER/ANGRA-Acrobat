@@ -1,16 +1,16 @@
 # Graph Report - angra-acrobat  (2026-07-21)
 
 ## Corpus Check
-- 26 files · ~11,504 words
+- 26 files · ~10,334 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 331 nodes · 735 edges · 23 communities (16 shown, 7 thin omitted)
-- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 97 edges (avg confidence: 0.8)
+- 312 nodes · 660 edges · 22 communities (16 shown, 6 thin omitted)
+- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 82 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `fe368487`
+- Built from commit: `4d9e7520`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -32,16 +32,15 @@
 - AGENTS.md
 - CONTRIBUTING.md
 - SECURITY.md
-- .selectionRects
 
 ## God Nodes (most connected - your core abstractions)
-1. `DocumentTab` - 84 edges
-2. `MainWindow` - 84 edges
-3. `PdfDocument` - 61 edges
-4. `main()` - 29 edges
-5. `doc()` - 25 edges
-6. `pageCount` - 14 edges
-7. `load` - 11 edges
+1. `DocumentTab` - 81 edges
+2. `MainWindow` - 73 edges
+3. `PdfDocument` - 54 edges
+4. `main()` - 22 edges
+5. `doc()` - 19 edges
+6. `load` - 11 edges
+7. `pageCount` - 11 edges
 8. `saveCopy` - 11 edges
 9. `redactRasterize` - 10 edges
 10. `runCli()` - 10 edges
@@ -61,23 +60,23 @@
 ## Import Cycles
 - None detected.
 
-## Communities (23 total, 7 thin omitted)
+## Communities (22 total, 6 thin omitted)
 
 ### Community 0 - "PdfDocument"
 Cohesion: 0.08
-Nodes (73): FPDF_BOOKMARK, FPDF_DOCUMENT, FPDF_WIDESTRING, QImage, QSizeF, QVarLengthArray, QStringList, main() (+65 more)
+Nodes (65): FPDF_BOOKMARK, FPDF_DOCUMENT, FPDF_WIDESTRING, QImage, QSizeF, QVarLengthArray, QStringList, main() (+57 more)
 
 ### Community 1 - "README.md"
 Cohesion: 0.05
 Nodes (30): Architecture, Current (M1), Dependency policy, Target layering (grow into, do not pre-build), Dependencies, Deliberately not built (and why - nothing is faked), Done (all local, all offline), Feature matrix (+22 more)
 
 ### Community 2 - "MainWindow"
-Cohesion: 0.04
-Nodes (49): QAction, QMenu, MainWindow, m_addTextAct, m_bookmarkDock, m_bookmarkTree, m_closeTabAct, m_compareAct (+41 more)
+Cohesion: 0.05
+Nodes (41): QAction, QMenu, MainWindow, m_bookmarkDock, m_bookmarkTree, m_closeTabAct, m_compareAct, m_copyAct (+33 more)
 
 ### Community 3 - "DocumentTab"
 Cohesion: 0.08
-Nodes (25): QPoint, QWidget, function, QPointF, QPolygonF, DocumentTab, m_canvas, m_doc (+17 more)
+Nodes (26): QPoint, QWidget, function, QList, QPointF, QPolygonF, DocumentTab, m_canvas (+18 more)
 
 ### Community 5 - ".render"
 Cohesion: 0.21
@@ -108,24 +107,24 @@ Cohesion: 0.40
 Nodes (5): Op, QByteArray, encryptCopy(), qpdfCopy(), writeValidatedCopy()
 
 ## Knowledge Gaps
-- **108 isolated node(s):** `p`, `t`, `buf`, `title`, `page` (+103 more)
+- **100 isolated node(s):** `p`, `t`, `buf`, `title`, `page` (+95 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `DocumentTab` connect `DocumentTab` to `PdfDocument`, `.buildToolbarAndMenus`, `.render`, `main.cpp`, `.afterStructureChange`, `.openPath`, `writeValidatedCopy`, `.tabAt`, `.selectionRects`?**
-  _High betweenness centrality (0.264) - this node is a cross-community bridge._
-- **Why does `MainWindow` connect `MainWindow` to `PdfDocument`, `.buildToolbarAndMenus`, `main.cpp`, `.openPath`, `.tabAt`?**
-  _High betweenness centrality (0.245) - this node is a cross-community bridge._
+- **Why does `DocumentTab` connect `DocumentTab` to `PdfDocument`, `.buildToolbarAndMenus`, `.render`, `main.cpp`, `.afterStructureChange`, `.openPath`, `writeValidatedCopy`, `.tabAt`?**
+  _High betweenness centrality (0.271) - this node is a cross-community bridge._
 - **Why does `PdfDocument` connect `PdfDocument` to `DocumentTab`, `writeValidatedCopy`, `PdfDocument.h`?**
-  _High betweenness centrality (0.230) - this node is a cross-community bridge._
-- **Are the 21 inferred relationships involving `DocumentTab` (e.g. with `encryptCopy()` and `.buildToolbarAndMenus()`) actually correct?**
-  _`DocumentTab` has 21 INFERRED edges - model-reasoned connections that need verification._
+  _High betweenness centrality (0.222) - this node is a cross-community bridge._
+- **Why does `MainWindow` connect `MainWindow` to `PdfDocument`, `.buildToolbarAndMenus`, `main.cpp`, `.openPath`, `.tabAt`?**
+  _High betweenness centrality (0.219) - this node is a cross-community bridge._
+- **Are the 18 inferred relationships involving `DocumentTab` (e.g. with `encryptCopy()` and `.buildToolbarAndMenus()`) actually correct?**
+  _`DocumentTab` has 18 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 2 inferred relationships involving `PdfDocument` (e.g. with `.textToPdf()` and `writeValidatedCopy()`) actually correct?**
   _`PdfDocument` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 26 inferred relationships involving `main()` (e.g. with `QColor` and `addHighlight`) actually correct?**
-  _`main()` has 26 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 19 inferred relationships involving `main()` (e.g. with `QColor` and `addHighlight`) actually correct?**
+  _`main()` has 19 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `p`, `t`, `buf` to the rest of the system?**
-  _108 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _100 weakly-connected nodes found - possible documentation gaps or missing edges._

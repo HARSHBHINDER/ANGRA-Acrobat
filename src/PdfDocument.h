@@ -74,6 +74,17 @@ public:
     // REPLACE the page with that bitmap. Original text/vectors are gone.
     bool redactRasterize(int pageIndex, const QList<QRectF>& rects);
 
+    // --- content stamping / page geometry (set the modified flag) ---
+    bool cropPage(int pageIndex, const QRectF& rect); // top-left-origin points
+    bool movePage(int from, int to);
+    bool addPageNumbers();                    // bottom-center, every page
+    bool addTextWatermark(const QString& text); // diagonal gray, every page
+    bool addTextAt(int pageIndex, const QPointF& pagePt, const QString& text);
+    bool placeImage(int pageIndex, const QImage& image, const QPointF& pagePt,
+                    double widthPt); // signature/stamp placement
+    int extractImages(int pageIndex, const QString& dirPath,
+                      const QString& baseName) const; // saved PNG count
+
     // --- interactive forms (fill only) ---
     bool hasForms() const;
     void formClick(int pageIndex, const QPointF& pagePt);

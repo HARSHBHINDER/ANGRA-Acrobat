@@ -126,6 +126,31 @@ int main(int argc, char** argv) {
         CHECK(locked.pageCount() == 2);
     }
 #endif
+    {
+        // stamping + geometry: crop, move, page numbers, watermark, place image
+        PdfDocument d;
+        CHECK(d.load(testPdf) == PdfDocument::Status::Ok);
+        CHECK(d.pageCount() == 2);
+        CHECK(d.movePage(0, 1)); // swap; still 2 pages, still renderable
+        CHECK(d.pageCount() == 2);
+        CHECK(!d.renderPage(0, 1.0).isNull());
+        CHECK(d.addPageNumbers());
+        CHECK(d.addTextWatermark(QStringLiteral("DRAFT")));
+        CHECK(d.addTextAt(0, QPointF(72, 72), QStringLiteral("stamped")));
+        QImage sig(40, 20, QImage::Format_ARGB32);
+        sig.fill(Qt::red);
+        CHECK(d.placeImage(0, sig, QPointF(100, 100), 72.0));
+        const QSizeF before = d.pageSizePoints(0);
+        CHECK(d.cropPage(0, QRectF(10, 10, 200, 300)));
+        const QSizeF after = d.pageSizePoints(0);
+        CHECK(after.width() < before.width()); // media box shrank
+        const QString path = tmp + QStringLiteral("/angra-test-stamp.pdf");
+        CHECK(d.saveCopy(path));
+        PdfDocument re;
+        CHECK(re.load(path) == PdfDocument::Status::Ok);
+        CHECK(re.pageText(0).contains(QStringLiteral("stamped")));
+        CHECK(re.extractImages(0, tmp, QStringLiteral("angra-test-extract")) >= 1);
+    }
     PdfDocument::shutdownLibrary();
     std::puts("ok");
     return 0;

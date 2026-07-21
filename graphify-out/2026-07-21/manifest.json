@@ -20,13 +20,13 @@
     "semantic_hash": ""
   },
   "src/PdfDocument.cpp": {
-    "mtime": 1784655575.9899402,
-    "ast_hash": "bd4411dd2468beb87a4493045b0eb3fa",
+    "mtime": 1784654494.7175472,
+    "ast_hash": "7af0559d548dc23b11b8b2d06d7657c7",
     "semantic_hash": ""
   },
   "src/PdfDocument.h": {
-    "mtime": 1784655547.7810004,
-    "ast_hash": "bb22071e31a08a7a2b59860af6f2e301",
+    "mtime": 1784653218.635509,
+    "ast_hash": "0050cd12d72cdb2a02b20217379b2979",
     "semantic_hash": ""
   },
   "src/PdfProtect.cpp": {
@@ -45,13 +45,13 @@
     "semantic_hash": ""
   },
   "src/main.cpp": {
-    "mtime": 1784658040.9038696,
-    "ast_hash": "ffa1dc5dbd0eadd5f55ecf2eb2c44101",
+    "mtime": 1784654501.0199053,
+    "ast_hash": "fd5c03dd396bd8542f1726b5bc55d182",
     "semantic_hash": ""
   },
   "tests/test_pdfdocument.cpp": {
-    "mtime": 1784658074.1809523,
-    "ast_hash": "505181b28580a5621695b23ca60af660",
+    "mtime": 1784653658.338284,
+    "ast_hash": "8af9585a16a36824a0cdfc3ebb959cf4",
     "semantic_hash": ""
   },
   ".github/workflows/build.yml": {
@@ -100,8 +100,8 @@
     "semantic_hash": ""
   },
   "docs/FEATURE_MATRIX.md": {
-    "mtime": 1784658095.130553,
-    "ast_hash": "637e05cee99f436852933b372f7c3e29",
+    "mtime": 1784653793.6059437,
+    "ast_hash": "136f44a0fbc923c33e96acb8184a733d",
     "semantic_hash": ""
   },
   "docs/KNOWN_LIMITATIONS.md": {
