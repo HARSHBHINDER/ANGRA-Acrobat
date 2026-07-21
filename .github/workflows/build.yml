@@ -1,0 +1,75 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.*"
+          arch: win64_msvc2022_64
+
+      - name: Get prebuilt PDFium
+        shell: pwsh
+        run: |
+          curl -L -o pdfium.tgz https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x64.tgz
+          New-Item -ItemType Directory -Force pdfium | Out-Null
+          tar -xzf pdfium.tgz -C pdfium
+          "PDFIUM_DIR=$PWD/pdfium" | Out-File -Append $env:GITHUB_ENV
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Generate test PDF
+        run: pwsh scripts/make-test-pdf.ps1
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Deploy Qt runtime
+        shell: pwsh
+        run: |
+          windeployqt build/ANGRA.exe --dir build/deploy --no-translations
+          Copy-Item "$env:PDFIUM_DIR/bin/pdfium.dll" build/deploy/
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          iscc installer/angra-setup.iss
+
+      - name: Portable archive
+        run: pwsh scripts/make-portable.ps1
+
+      - name: SBOM
+        run: pwsh scripts/gen-sbom.ps1
+
+      - name: Checksums
+        run: pwsh scripts/gen-checksums.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: angra-acrobat-windows-x64
+          path: dist/windows/
+
+      - name: Draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/windows/*
+          body: |
+            Binaries are NOT code-signed. Verify downloads against SHA256SUMS.txt.
