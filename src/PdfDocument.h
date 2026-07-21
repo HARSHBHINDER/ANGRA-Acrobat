@@ -63,8 +63,8 @@ public:
     void deletePage(int pageIndex);
     int pageRotation(int pageIndex) const;        // quarter turns 0..3
     void setPageRotation(int pageIndex, int rot); // quarter turns 0..3
-    bool importAll(const PdfDocument& src, int insertAt);
-    bool importRange(const PdfDocument& src, const QByteArray& range, int insertAt);
+    // range empty = all pages (e.g. "1,3-5" 1-based, PDFium syntax)
+    bool importPages(const PdfDocument& src, int insertAt, const QByteArray& range = {});
     bool addImagePage(const QImage& image);     // appended, sized to image at 96 dpi
     bool insertImagePage(int index, const QImage& image, const QSizeF& sizePts);
     bool addTextPage(const QStringList& lines); // appended, US-letter, 11 pt

@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
         CHECK(src.load(testPdf) == PdfDocument::Status::Ok);
         PdfDocument one;
         CHECK(one.createEmpty());
-        CHECK(one.importRange(src, "1", 0));
+        CHECK(one.importPages(src, 0, "1"));
         CHECK(one.pageCount() == 1);
     }
     {

@@ -707,13 +707,13 @@ private:
         m_signAct = comment->addAction(tr("Place &Signature Image At Last Click..."),
                                        [this] { placeSignature(); });
         comment->addSeparator();
-        m_selectToolAct = comment->addAction(tr("&Select Tool"));
+        QAction* selectToolAct = comment->addAction(tr("&Select Tool"));
         m_inkToolAct = comment->addAction(tr("&Draw Ink Tool"));
-        m_selectToolAct->setCheckable(true);
+        selectToolAct->setCheckable(true);
         m_inkToolAct->setCheckable(true);
-        m_selectToolAct->setChecked(true);
+        selectToolAct->setChecked(true);
         auto* group = new QActionGroup(this);
-        group->addAction(m_selectToolAct);
+        group->addAction(selectToolAct);
         group->addAction(m_inkToolAct);
         QObject::connect(group, &QActionGroup::triggered, group, [this](QAction* a) {
             if (auto* t = tab())
@@ -862,7 +862,7 @@ private:
         PdfDocument out;
         QString err;
         if (out.createEmpty() &&
-            out.importRange(t->doc(), QByteArray::number(t->page() + 1), 0) &&
+            out.importPages(t->doc(), 0, QByteArray::number(t->page() + 1)) &&
             out.saveCopy(path, &err))
             statusBar()->showMessage(tr("Extracted page %1").arg(t->page() + 1));
         else
@@ -882,7 +882,7 @@ private:
             QMessageBox::warning(this, theme::kAppName, tr("Cannot open %1").arg(path));
             return;
         }
-        if (t->doc().importAll(src, t->page() + 1))
+        if (t->doc().importPages(src, t->page() + 1))
             t->afterStructureChange();
     }
 
@@ -895,7 +895,7 @@ private:
         for (const QString& p : paths) {
             PdfDocument src;
             if (src.load(p) != PdfDocument::Status::Ok ||
-                !t->doc().importAll(src, t->doc().pageCount())) {
+                !t->doc().importPages(src, t->doc().pageCount())) {
                 QMessageBox::warning(this, theme::kAppName, tr("Skipping %1").arg(p));
             }
         }
@@ -918,7 +918,7 @@ private:
                 QDir(dir).filePath(QStringLiteral("%1-page-%2.pdf")
                                        .arg(base.isEmpty() ? QStringLiteral("document") : base)
                                        .arg(i + 1, 3, 10, QLatin1Char('0')));
-            if (out.createEmpty() && out.importRange(t->doc(), QByteArray::number(i + 1), 0) &&
+            if (out.createEmpty() && out.importPages(t->doc(), 0, QByteArray::number(i + 1)) &&
                 out.saveCopy(dest))
                 ++okCount;
         }
@@ -1360,7 +1360,7 @@ private:
             *m_rotateAct = nullptr, *m_deletePageAct = nullptr, *m_extractAct = nullptr,
             *m_insertAct = nullptr, *m_mergeAct = nullptr, *m_splitAct = nullptr,
             *m_flattenAct = nullptr, *m_highlightAct = nullptr, *m_noteAct = nullptr,
-            *m_squareAct = nullptr, *m_selectToolAct = nullptr, *m_inkToolAct = nullptr,
+            *m_squareAct = nullptr, *m_inkToolAct = nullptr,
             *m_toImagesAct = nullptr, *m_toTextAct = nullptr, *m_copyAct = nullptr,
             *m_redactAct = nullptr, *m_compareAct = nullptr, *m_copyFileAct = nullptr,
             *m_copyPathAct = nullptr, *m_revealAct = nullptr, *m_toJpgAct = nullptr,
@@ -1415,7 +1415,7 @@ static int runCli(const QStringList& args) {
         for (int i = 3; i < args.size(); ++i) {
             PdfDocument src;
             if (src.load(args.at(i)) != PdfDocument::Status::Ok ||
-                !out.importAll(src, out.pageCount()))
+                !out.importPages(src, out.pageCount()))
                 return fail("cannot merge input");
         }
         QString err;

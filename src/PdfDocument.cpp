@@ -377,19 +377,11 @@ void PdfDocument::setPageRotation(int pageIndex, int rot) {
     m_modified = true;
 }
 
-bool PdfDocument::importAll(const PdfDocument& src, int insertAt) {
+bool PdfDocument::importPages(const PdfDocument& src, int insertAt, const QByteArray& range) {
     if (!m_doc || !src.m_doc)
         return false;
-    if (!FPDF_ImportPages(doc(m_doc), doc(src.m_doc), nullptr, insertAt))
-        return false;
-    m_modified = true;
-    return true;
-}
-
-bool PdfDocument::importRange(const PdfDocument& src, const QByteArray& range, int insertAt) {
-    if (!m_doc || !src.m_doc)
-        return false;
-    if (!FPDF_ImportPages(doc(m_doc), doc(src.m_doc), range.constData(), insertAt))
+    if (!FPDF_ImportPages(doc(m_doc), doc(src.m_doc),
+                          range.isEmpty() ? nullptr : range.constData(), insertAt))
         return false;
     m_modified = true;
     return true;
@@ -430,7 +422,7 @@ bool PdfDocument::addTextPage(const QStringList& lines) {
     const double W = 612, H = 792, margin = 54, lead = 14;
     const float fontSize = 11;
     const int perPage = static_cast<int>((H - 2 * margin) / lead);
-    for (int start = 0; start < lines.size() || start == 0; start += perPage) {
+    for (int start = 0; start < std::max<int>(1, lines.size()); start += perPage) {
         FPDF_PAGE page = FPDFPage_New(doc(m_doc), pageCount(), W, H);
         if (!page)
             return false;
@@ -445,8 +437,6 @@ bool PdfDocument::addTextPage(const QStringList& lines) {
         }
         FPDFPage_GenerateContent(page);
         FPDF_ClosePage(page);
-        if (lines.isEmpty())
-            break;
     }
     m_modified = true;
     return true;
