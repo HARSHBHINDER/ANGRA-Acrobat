@@ -4,7 +4,7 @@ project(AngraAcrobat VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets PrintSupport)
 
 # PDFium: prebuilt binary drop, root given by PDFIUM_DIR (cache var or env).
 set(PDFIUM_DIR "$ENV{PDFIUM_DIR}" CACHE PATH "PDFium root containing include/ and lib/")
@@ -20,7 +20,7 @@ target_include_directories(pdfcore PUBLIC src "${PDFIUM_INCLUDE_DIR}")
 target_link_libraries(pdfcore PUBLIC Qt6::Gui "${PDFIUM_LIBRARY}")
 
 add_executable(ANGRA WIN32 src/main.cpp)
-target_link_libraries(ANGRA PRIVATE pdfcore Qt6::Widgets)
+target_link_libraries(ANGRA PRIVATE pdfcore Qt6::Widgets Qt6::PrintSupport)
 set_target_properties(ANGRA PROPERTIES OUTPUT_NAME "ANGRA")
 
 if(EXISTS "${PDFIUM_DIR}/bin/pdfium.dll")

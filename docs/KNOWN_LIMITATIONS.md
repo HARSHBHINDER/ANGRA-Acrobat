@@ -1,12 +1,19 @@
-# Known limitations (M1)
+# Known limitations
 
-- Rendering is synchronous on the UI thread; large pages block briefly.
-  Async render coordinator arrives with M2 (cancellation requires it).
-- Whole file is loaded into RAM (FPDF_LoadMemDocument). Streaming file
-  access when multi-hundred-MB documents matter.
-- Password-protected PDFs are detected but cannot be opened (M2).
-- Single-page view only; no continuous scroll, search, selection, print (M2).
-- No settings persistence yet; nothing to preserve across upgrades.
+- Rendering, thumbnails, search, and conversions are synchronous on the UI
+  thread; big documents cause visible pauses. Async + cancellation is the
+  next slice.
+- Whole file lives in RAM (FPDF_LoadMemDocument).
+- Thumbnails disabled above 200 pages (sync generation cost).
+- Search is page-granular: highlights all matches on a page; F3 jumps pages,
+  not individual matches.
+- Annotations render via PDFium's built-in appearance handling; some viewers
+  may not show them until they generate appearances themselves.
+- Annotation editing/deletion not implemented; ink strokes commit one at a
+  time with fixed colors.
+- Saving always writes a full validated copy (never incremental); signatures
+  in source files will not survive editing (none can be created yet either).
+- No settings persistence except recent-file list.
 - Binaries are not code-signed; SmartScreen will warn.
-- Fit-width reserves scrollbar width even when no scrollbar appears.
-- No sandboxing around PDFium parsing (see SECURITY_MODEL.md).
+- Blocked features and why: see FEATURE_MATRIX.md - nothing there is faked.
+- Not yet compiled locally (no toolchain on this machine); CI builds it.

@@ -1,13 +1,9 @@
 # Status
 
-Active milestone: M1 complete pending first real build on a machine with the
-toolchain installed. Next: M2 (production viewer).
-
-## What works
-
-Single-page viewer: open (dialog, Ctrl+O, or file argument), render at any
-zoom, prev/next, fit page/width, page indicator, error and loading states,
-About. Test: tests/test_pdfdocument.cpp via ctest.
+Active milestone: compressed M2+M3+M4+M7 slice complete in source form -
+production viewer (tabs, thumbs, search, selection, bookmarks, links,
+password, print), annotations, page organization with safe save, and local
+conversions. Awaiting first CI build for compile/test verification.
 
 ## Exact commands
 
@@ -17,9 +13,7 @@ About. Test: tests/test_pdfdocument.cpp via ctest.
     pwsh scripts/make-test-pdf.ps1
     ctest --test-dir build --output-on-failure
 
-## Report template (every run)
+## Next vertical slice
 
-CURRENT MILESTONE / SELECTED VERTICAL SLICE / ACCEPTANCE CRITERIA / COMPLETED /
-CHANGED / ARCHITECTURE / BUILD / TESTS / PDF VALIDATION / INSTALLER /
-SHARING AND CONNECTIVITY / SECURITY / ACCESSIBILITY / YAGNI REVIEW /
-KNOWN LIMITATIONS / BLOCKERS / NEXT VERTICAL SLICE (exactly one).
+Background rendering with cancellation (unblocks large-document UX and is
+prerequisite for continuous scroll).
