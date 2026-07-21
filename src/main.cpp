@@ -282,7 +282,8 @@ public:
             if (i > 0)
                 printer.newPage();
             const QSizeF pt = m_doc.pageSizePoints(i);
-            const QRectF target = printer.pageRect(QPrinter::DevicePixel);
+            // Qt6-safe page rect (QPrinter::pageRect(Unit) is deprecated)
+            const QRectF target = printer.pageLayout().paintRectPixels(printer.resolution());
             if (pt.isEmpty() || target.isEmpty())
                 continue;
             const double s =

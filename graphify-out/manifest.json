@@ -1,0 +1,147 @@
+{
+  "scripts/gen-checksums.ps1": {
+    "mtime": 1784651164.6116407,
+    "ast_hash": "db00108a01c45719bdf2c6cc775cfbf3",
+    "semantic_hash": ""
+  },
+  "scripts/gen-sbom.ps1": {
+    "mtime": 1784654514.906552,
+    "ast_hash": "f3842447a8e95aca1e92c78edf0531be",
+    "semantic_hash": ""
+  },
+  "scripts/make-portable.ps1": {
+    "mtime": 1784651164.5797696,
+    "ast_hash": "cc50a141843c82fa2f9ea53cbb68c1aa",
+    "semantic_hash": ""
+  },
+  "scripts/make-test-pdf.ps1": {
+    "mtime": 1784651164.555613,
+    "ast_hash": "da5b13e4d450b5c728a87c5811702e9e",
+    "semantic_hash": ""
+  },
+  "src/PdfDocument.cpp": {
+    "mtime": 1784654494.7175472,
+    "ast_hash": "7af0559d548dc23b11b8b2d06d7657c7",
+    "semantic_hash": ""
+  },
+  "src/PdfDocument.h": {
+    "mtime": 1784653218.635509,
+    "ast_hash": "0050cd12d72cdb2a02b20217379b2979",
+    "semantic_hash": ""
+  },
+  "src/PdfProtect.cpp": {
+    "mtime": 1784653326.5419202,
+    "ast_hash": "1738a0c06e5fa051d6c588d657b404d1",
+    "semantic_hash": ""
+  },
+  "src/PdfProtect.h": {
+    "mtime": 1784653313.056229,
+    "ast_hash": "d181cd9f070a94ba63024b43d64e42c1",
+    "semantic_hash": ""
+  },
+  "src/Theme.h": {
+    "mtime": 1784650774.4028904,
+    "ast_hash": "fa08134065138323d62db2ea5a6be9b9",
+    "semantic_hash": ""
+  },
+  "src/main.cpp": {
+    "mtime": 1784654501.0199053,
+    "ast_hash": "fd5c03dd396bd8542f1726b5bc55d182",
+    "semantic_hash": ""
+  },
+  "tests/test_pdfdocument.cpp": {
+    "mtime": 1784653658.338284,
+    "ast_hash": "8af9585a16a36824a0cdfc3ebb959cf4",
+    "semantic_hash": ""
+  },
+  ".github/workflows/build.yml": {
+    "mtime": 1784653671.653656,
+    "ast_hash": "fc93139e7062e112388957b6d05167e6",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1784651213.7025743,
+    "ast_hash": "d7a19fb90eb3b3fad0e3376e30c2674a",
+    "semantic_hash": ""
+  },
+  "CMakeLists.txt": {
+    "mtime": 1784653499.200384,
+    "ast_hash": "50d233e07062beb201dd3d8634e0fa1c",
+    "semantic_hash": ""
+  },
+  "CONTRIBUTING.md": {
+    "mtime": 1784651213.7359743,
+    "ast_hash": "7a2a6c8ae335d437d13d9c0af68a52de",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1784650624.5209675,
+    "ast_hash": "06c3dab3cc4d62b2406c0a7aca2e380d",
+    "semantic_hash": ""
+  },
+  "SECURITY.md": {
+    "mtime": 1784651213.769135,
+    "ast_hash": "e3321720fde480adec12c9b627873f8f",
+    "semantic_hash": ""
+  },
+  "THIRD_PARTY_NOTICES.md": {
+    "mtime": 1784651213.7994463,
+    "ast_hash": "54b20be02ef2ecdffff7eb3fe6e35eaf",
+    "semantic_hash": ""
+  },
+  "docs/ARCHITECTURE.md": {
+    "mtime": 1784651213.8858988,
+    "ast_hash": "7ca950fba7c497aa8993f6b4244741da",
+    "semantic_hash": ""
+  },
+  "docs/DEPENDENCIES.md": {
+    "mtime": 1784651247.087983,
+    "ast_hash": "6a94a1124283df62bb9352009831ca4c",
+    "semantic_hash": ""
+  },
+  "docs/FEATURE_MATRIX.md": {
+    "mtime": 1784653793.6059437,
+    "ast_hash": "136f44a0fbc923c33e96acb8184a733d",
+    "semantic_hash": ""
+  },
+  "docs/KNOWN_LIMITATIONS.md": {
+    "mtime": 1784652672.6448622,
+    "ast_hash": "a4c75212e871e9af1f7c65c9f50fb724",
+    "semantic_hash": ""
+  },
+  "docs/PRODUCT_SPEC.md": {
+    "mtime": 1784651213.8588388,
+    "ast_hash": "c4fec0858226a1060f4cc34ec778188b",
+    "semantic_hash": ""
+  },
+  "docs/RELEASE.md": {
+    "mtime": 1784651247.1463187,
+    "ast_hash": "e1589971fbcde39eca867c3338b7d1ed",
+    "semantic_hash": ""
+  },
+  "docs/ROADMAP.md": {
+    "mtime": 1784651246.9881012,
+    "ast_hash": "929e7f137a07274d37bebc51f920552c",
+    "semantic_hash": ""
+  },
+  "docs/SECURITY_MODEL.md": {
+    "mtime": 1784651247.0546255,
+    "ast_hash": "16f5854c64b6e24b00850a54b598cece",
+    "semantic_hash": ""
+  },
+  "docs/STATUS.md": {
+    "mtime": 1784653793.6443317,
+    "ast_hash": "60d5d97b967aad396ed7a75d0c6c1380",
+    "semantic_hash": ""
+  },
+  "docs/TESTING.md": {
+    "mtime": 1784651247.1131265,
+    "ast_hash": "2ae42d2e6d5c9c758bf7a30c2874210d",
+    "semantic_hash": ""
+  },
+  "resources/test.pdf": {
+    "mtime": 1784651260.4710166,
+    "ast_hash": "b843a2a63a37f31cf9917e933b2edd45",
+    "semantic_hash": ""
+  }
+}

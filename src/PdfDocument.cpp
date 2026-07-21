@@ -248,7 +248,7 @@ QString PdfDocument::textInRect(int pageIndex, const QRectF& rect) const {
     if (chars <= 0)
         return {};
     QVarLengthArray<unsigned short, 256> buf(chars + 1);
-    FPDFText_GetBoundedText(tp.t, left, top, right, bottom, buf.data(), chars);
+    FPDFText_GetBoundedText(tp.t, left, top, right, bottom, buf.data(), chars + 1);
     return QString::fromUtf16(reinterpret_cast<const char16_t*>(buf.constData()), chars);
 }
 

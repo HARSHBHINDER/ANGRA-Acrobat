@@ -17,7 +17,9 @@ $sbom = [ordered]@{
         [ordered]@{ SPDXID = "SPDXRef-Package-qt6"; name = "Qt6"; versionInfo = "6.7";
             licenseDeclared = "LGPL-3.0-only"; downloadLocation = "https://www.qt.io" },
         [ordered]@{ SPDXID = "SPDXRef-Package-pdfium"; name = "PDFium"; versionInfo = "prebuilt";
-            licenseDeclared = "Apache-2.0"; downloadLocation = "https://pdfium.googlesource.com/pdfium/" }
+            licenseDeclared = "Apache-2.0"; downloadLocation = "https://pdfium.googlesource.com/pdfium/" },
+        [ordered]@{ SPDXID = "SPDXRef-Package-qpdf"; name = "qpdf"; versionInfo = "11.x";
+            licenseDeclared = "Apache-2.0"; downloadLocation = "https://github.com/qpdf/qpdf" }
     )
 }
 $sbom | ConvertTo-Json -Depth 6 | Set-Content "dist\windows\SBOM.spdx.json"
