@@ -4,34 +4,29 @@
 
 | Feature | Notes |
 |---------|-------|
-| Open PDF (dialog, Ctrl+O, file argument, Open Recent) | duplicate-session guard |
-| Password-protected open | prompt loop |
-| Tabs | close prompts on unsaved changes |
-| Render page (hidpi-aware) | PDFium |
-| Prev/Next, zoom, fit page/width, page indicator | |
-| Page thumbnails | click to jump; capped at 200 pages |
-| Text search | page-granular, all matches highlighted, F3 next |
-| Text selection + copy | rubber-band; bounded-text extraction |
-| Bookmarks panel | tree, click to jump |
-| Links | in-document jump; external URLs need confirmation |
-| Print | Qt print dialog, all pages |
-| Document properties | metadata, page count, permission bits |
-| Annotations: highlight, sticky note, ink (draw tool), rectangle | |
-| Flatten annotations | |
-| Page ops: delete, rotate, extract, insert-from-file, merge, split | |
-| Safe save (Save Copy) | serialize -> validate -> atomic replace; source never harmed |
-| Convert: images->PDF, text->PDF, PDF->images, PDF->text | |
+| Open (dialog/Ctrl+O/arg/recent), password prompt, tabs | duplicate-session guard |
+| Render, zoom, fit, thumbnails, page indicator | hidpi-aware |
+| Search (highlighted, F3), selection + copy, bookmarks, links | external URLs confirmed first |
+| Print, document properties | |
+| Annotations: highlight, note, ink, rectangle; flatten | |
+| Form filling | click + keyboard via PDFium formfill; values persist on save |
+| Page ops: delete, rotate, extract, insert, merge, split | |
+| Safe save | serialize -> validate -> atomic replace |
+| Convert: images/text -> PDF; PDF -> images/text | UI + CLI |
+| CLI batch | --to-text, --to-images, --merge |
+| Redaction | rasterize-and-replace page; text provably destroyed (tested) |
+| Encryption (AES-256), decrypt, sanitize, optimize, repair | via qpdf; build-optional (QPDF_DIR), CI enables it |
+| Compare | page-level text diff between two tabs |
+| Share (local) | copy file/path to clipboard, show in Explorer |
+| Text comparison | line-set diff; see ponytail note in source |
 
-## Blocked — needs a dependency or build feedback, deliberately not faked
+## Deliberately not built (and why - nothing is faked)
 
-| Feature | Blocker |
-|---------|---------|
-| OCR + scanning | Tesseract/Leptonica + WIA; not in repo yet (M6) |
-| Encryption writing, permissions | PDFium cannot write encryption; qpdf (M9) |
-| True redaction / sanitization | requires guaranteed content removal via qpdf full rewrite (M9); faking it would be a security hazard |
-| Digital signatures | Windows CNG + incremental-save signing (M10) |
-| Form filling/creation | PDFium formfill environment (M8) |
-| Compare, optimize, repair | M12 |
-| Continuous scroll, per-match find, annotation editing | M2/M3 polish |
-| Sharing, connectors, sync | M13-M15; optional network features |
-| CLI, batch, fuzzing | M16 |
+| Feature | Reason |
+|---------|--------|
+| OCR + scanning | needs Tesseract/Leptonica + WIA binaries; not available to this build |
+| Digital signatures | CNG + byte-range signing must be done correctly or not at all |
+| Form creation | fill works; authoring is a separate editor slice |
+| Continuous scroll / async render | UI rework; next slice |
+| Sharing connectors / sync | network features; offline-first spec keeps them optional |
+| Fuzzing harness | M16; needs a build machine first |

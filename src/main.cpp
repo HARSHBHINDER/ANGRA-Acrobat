@@ -1,5 +1,8 @@
 #include "PdfDocument.h"
 #include "Theme.h"
+#ifdef ANGRA_HAVE_QPDF
+#include "PdfProtect.h"
+#endif
 
 #include <QActionGroup>
 #include <QApplication>
@@ -11,18 +14,24 @@
 #include <QHBoxLayout>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QDialog>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMainWindow>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QPrintDialog>
 #include <QPrinter>
+#include <QProcess>
 #include <QRubberBand>
+#include <QSaveFile>
 #include <QScrollArea>
 #include <QSettings>
 #include <QSplitter>
@@ -33,6 +42,7 @@
 #include <QTreeWidget>
 #include <QUrl>
 #include <algorithm>
+#include <cstdio>
 #include <functional>
 
 // One open document: canvas + thumbnails + selection/search/ink state.
@@ -60,6 +70,7 @@ public:
         m_canvas->setAlignment(Qt::AlignCenter);
         m_canvas->installEventFilter(this);
         m_canvas->setMouseTracking(false);
+        m_canvas->setFocusPolicy(Qt::StrongFocus); // keyboard input for form fields
 
         m_scroll = new QScrollArea;
         m_scroll->setWidget(m_canvas);
@@ -128,6 +139,7 @@ public:
             return;
         }
         m_page = page;
+        m_doc.formKillFocus();
         clearSelection();
         if (m_fit != FitMode::Custom)
             applyFit();
@@ -340,6 +352,21 @@ protected:
                 return true;
             }
             break;
+        case QEvent::KeyPress:
+            if (m_doc.hasForms()) {
+                const auto* ke = static_cast<QKeyEvent*>(ev);
+                if (ke->key() == Qt::Key_Backspace) {
+                    m_doc.formChar(m_page, 8);
+                    render();
+                    return true;
+                }
+                if (!ke->text().isEmpty() && ke->text().at(0).isPrint()) {
+                    m_doc.formChar(m_page, ke->text().at(0).unicode());
+                    render();
+                    return true;
+                }
+            }
+            break;
         default:
             break;
         }
@@ -354,6 +381,10 @@ private:
     void handleClick(const QPointF& pagePt) {
         m_lastPagePt = pagePt;
         clearSelection();
+        if (m_doc.hasForms()) { // toggle checkboxes, focus text fields
+            m_doc.formClick(m_page, pagePt);
+            render();
+        }
         const PdfLinkHit hit = m_doc.linkAt(m_page, pagePt);
         if (hit.type == PdfLinkHit::Type::Page && hit.page >= 0) {
             gotoPage(hit.page);
@@ -654,6 +685,52 @@ private:
         m_toImagesAct = convert->addAction(tr("PDF to I&mages..."), [this] { pdfToImages(); });
         m_toTextAct = convert->addAction(tr("PDF to Te&xt..."), [this] { pdfToText(); });
 
+        // Protect
+        QMenu* protect = menuBar()->addMenu(tr("&Protect"));
+        m_redactAct = protect->addAction(tr("&Redact Selection (rasterize page)"),
+                                         [this] { redactSelection(); });
+#ifdef ANGRA_HAVE_QPDF
+        m_encryptAct = protect->addAction(tr("&Encrypt Copy..."), [this] { encryptCopy(); });
+        m_decryptAct = protect->addAction(tr("Remove Encr&yption Copy..."),
+                                          [this] { qpdfCopy(Op::Decrypt); });
+        m_sanitizeAct = protect->addAction(tr("&Sanitized Copy (strip metadata)..."),
+                                           [this] { qpdfCopy(Op::Sanitize); });
+#endif
+
+        // Tools
+        QMenu* tools = menuBar()->addMenu(tr("&Tools"));
+        m_compareAct = tools->addAction(tr("&Compare Text With Other Tab..."),
+                                        [this] { compareTabs(); });
+#ifdef ANGRA_HAVE_QPDF
+        m_optimizeAct = tools->addAction(tr("&Optimized Copy..."),
+                                         [this] { qpdfCopy(Op::Optimize); });
+        m_repairAct = tools->addAction(tr("&Repaired Copy..."),
+                                       [this] { qpdfCopy(Op::Repair); });
+#endif
+
+        // Share (all local OS integrations; the app itself makes no connections)
+        QMenu* share = menuBar()->addMenu(tr("&Share"));
+        m_copyFileAct = share->addAction(tr("Copy &File to Clipboard"), [this] {
+            if (auto* t = tab()) {
+                auto* mime = new QMimeData;
+                mime->setUrls({QUrl::fromLocalFile(t->doc().filePath())});
+                QApplication::clipboard()->setMimeData(mime);
+                statusBar()->showMessage(tr("File copied; paste into mail or chat"));
+            }
+        });
+        m_copyPathAct = share->addAction(tr("Copy File &Path"), [this] {
+            if (auto* t = tab())
+                QApplication::clipboard()->setText(
+                    QDir::toNativeSeparators(t->doc().filePath()));
+        });
+        m_revealAct = share->addAction(tr("Show in &Explorer"), [this] {
+            if (auto* t = tab())
+                QProcess::startDetached(
+                    QStringLiteral("explorer"),
+                    {QStringLiteral("/select,"),
+                     QDir::toNativeSeparators(t->doc().filePath())});
+        });
+
         // Help
         QMenu* help = menuBar()->addMenu(tr("&Help"));
         help->addAction(tr("&About %1").arg(theme::kAppName), [this] {
@@ -890,6 +967,167 @@ private:
             QMessageBox::warning(this, theme::kAppName, tr("Cannot write %1").arg(dest));
     }
 
+    void redactSelection() {
+        auto* t = tab();
+        if (!t || t->selectionRects().isEmpty()) {
+            statusBar()->showMessage(tr("Select an area to redact first"));
+            return;
+        }
+        if (QMessageBox::warning(
+                this, tr("Redact"),
+                tr("The whole page is replaced by an image with the selected area "
+                   "blacked out. Text, vectors, and form fields on this page are "
+                   "permanently destroyed. Continue?"),
+                QMessageBox::Yes | QMessageBox::Cancel) != QMessageBox::Yes)
+            return;
+        if (t->doc().redactRasterize(t->page(), t->selectionRects())) {
+            t->afterStructureChange();
+            statusBar()->showMessage(
+                tr("Page %1 redacted. Save a copy to persist it.").arg(t->page() + 1));
+        }
+    }
+
+    void compareTabs() {
+        auto* t = tab();
+        if (!t || m_tabs->count() < 2) {
+            statusBar()->showMessage(tr("Open the second document in another tab first"));
+            return;
+        }
+        QStringList names;
+        QList<DocumentTab*> others;
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (m_tabs->widget(i) != t) {
+                names << m_tabs->tabText(i);
+                others << tabAt(i);
+            }
+        }
+        bool ok = false;
+        const QString pick = QInputDialog::getItem(this, tr("Compare"),
+                                                   tr("Compare against:"), names, 0,
+                                                   false, &ok);
+        if (!ok)
+            return;
+        DocumentTab* other = others.at(names.indexOf(pick));
+        const int pages =
+            std::max(t->doc().pageCount(), other->doc().pageCount());
+        QStringList report;
+        for (int i = 0; i < pages; ++i) {
+            const QStringList a = t->doc().pageText(i).split(QLatin1Char('\n'));
+            const QStringList b = other->doc().pageText(i).split(QLatin1Char('\n'));
+            if (a == b)
+                continue;
+            report << tr("--- Page %1 differs ---").arg(i + 1);
+            // ponytail: line-set diff, not LCS; upgrade when someone needs ordering
+            for (const QString& line : a)
+                if (!b.contains(line) && !line.trimmed().isEmpty())
+                    report << QStringLiteral("< %1").arg(line);
+            for (const QString& line : b)
+                if (!a.contains(line) && !line.trimmed().isEmpty())
+                    report << QStringLiteral("> %1").arg(line);
+        }
+        auto* dlg = new QDialog(this);
+        dlg->setWindowTitle(tr("Text Comparison"));
+        dlg->resize(700, 500);
+        auto* lay = new QHBoxLayout(dlg);
+        auto* view = new QPlainTextEdit(
+            report.isEmpty() ? tr("No text differences found.") : report.join('\n'));
+        view->setReadOnly(true);
+        lay->addWidget(view);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    }
+
+#ifdef ANGRA_HAVE_QPDF
+    enum class Op { Decrypt, Sanitize, Optimize, Repair };
+
+    // Writes qpdf output only after PDFium confirms it reopens cleanly.
+    void writeValidatedCopy(const QByteArray& bytes, const QString& loadPw,
+                            const QString& doneMsg) {
+        const QString dest = QFileDialog::getSaveFileName(this, tr("Save Copy As"), {},
+                                                          tr("PDF files (*.pdf)"));
+        if (dest.isEmpty())
+            return;
+        QSaveFile out(dest);
+        if (!out.open(QIODevice::WriteOnly) || out.write(bytes) != bytes.size() ||
+            !out.commit()) {
+            QMessageBox::warning(this, theme::kAppName, tr("Writing the file failed."));
+            return;
+        }
+        PdfDocument check;
+        if (check.load(dest, loadPw) != PdfDocument::Status::Ok &&
+            check.load(dest) != PdfDocument::Status::Ok) {
+            QFile::remove(dest);
+            QMessageBox::warning(this, theme::kAppName,
+                                 tr("Validation failed; the copy was removed."));
+            return;
+        }
+        statusBar()->showMessage(doneMsg);
+    }
+
+    void encryptCopy() {
+        auto* t = tab();
+        if (!t)
+            return;
+        bool ok = false;
+        const QString userPw = QInputDialog::getText(
+            this, tr("Encrypt Copy"), tr("Open password (required):"),
+            QLineEdit::Password, {}, &ok);
+        if (!ok || userPw.isEmpty())
+            return;
+        const QString ownerPw = QInputDialog::getText(
+            this, tr("Encrypt Copy"),
+            tr("Permission password (optional, Enter to reuse open password):"),
+            QLineEdit::Password, {}, &ok);
+        if (!ok)
+            return;
+        QByteArray bytes;
+        QString err;
+        if (!pdfprotect::encrypt(t->doc().filePath(),
+                                 QString::fromUtf8(t->doc().password()), userPw, ownerPw,
+                                 &bytes, &err)) {
+            QMessageBox::warning(this, theme::kAppName, tr("Encryption failed: %1").arg(err));
+            return;
+        }
+        writeValidatedCopy(bytes, userPw, tr("Encrypted copy saved (AES-256)"));
+    }
+
+    void qpdfCopy(Op op) {
+        auto* t = tab();
+        if (!t)
+            return;
+        const QString src = t->doc().filePath();
+        const QString pw = QString::fromUtf8(t->doc().password());
+        QByteArray bytes;
+        QString err;
+        int warnings = 0;
+        bool okRun = false;
+        QString doneMsg;
+        switch (op) {
+        case Op::Decrypt:
+            okRun = pdfprotect::decrypt(src, pw, &bytes, &err);
+            doneMsg = tr("Decrypted copy saved");
+            break;
+        case Op::Sanitize:
+            okRun = pdfprotect::sanitize(src, pw, &bytes, &err);
+            doneMsg = tr("Sanitized copy saved (metadata and revision history removed)");
+            break;
+        case Op::Optimize:
+            okRun = pdfprotect::optimize(src, pw, &bytes, &err);
+            doneMsg = tr("Optimized copy saved");
+            break;
+        case Op::Repair:
+            okRun = pdfprotect::repair(src, pw, &bytes, &err, &warnings);
+            doneMsg = tr("Repaired copy saved (%1 issues recovered)").arg(warnings);
+            break;
+        }
+        if (!okRun) {
+            QMessageBox::warning(this, theme::kAppName, tr("Operation failed: %1").arg(err));
+            return;
+        }
+        writeValidatedCopy(bytes, {}, doneMsg);
+    }
+#endif
+
     void showProperties() {
         auto* t = tab();
         if (!t)
@@ -967,8 +1205,14 @@ private:
               m_fitWidthAct, m_findNextAct, m_propsAct, m_printAct, m_closeTabAct,
               m_rotateAct, m_deletePageAct, m_extractAct, m_insertAct, m_mergeAct,
               m_splitAct, m_flattenAct, m_highlightAct, m_noteAct, m_squareAct,
-              m_toImagesAct, m_toTextAct, m_copyAct})
+              m_toImagesAct, m_toTextAct, m_copyAct, m_redactAct, m_compareAct,
+              m_copyFileAct, m_copyPathAct, m_revealAct})
             a->setEnabled(loaded);
+#ifdef ANGRA_HAVE_QPDF
+        for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
+                           m_repairAct})
+            a->setEnabled(loaded);
+#endif
         if (loaded) {
             m_prevAct->setEnabled(t->page() > 0);
             m_nextAct->setEnabled(t->page() + 1 < t->doc().pageCount());
@@ -1005,8 +1249,69 @@ private:
             *m_insertAct = nullptr, *m_mergeAct = nullptr, *m_splitAct = nullptr,
             *m_flattenAct = nullptr, *m_highlightAct = nullptr, *m_noteAct = nullptr,
             *m_squareAct = nullptr, *m_selectToolAct = nullptr, *m_inkToolAct = nullptr,
-            *m_toImagesAct = nullptr, *m_toTextAct = nullptr, *m_copyAct = nullptr;
+            *m_toImagesAct = nullptr, *m_toTextAct = nullptr, *m_copyAct = nullptr,
+            *m_redactAct = nullptr, *m_compareAct = nullptr, *m_copyFileAct = nullptr,
+            *m_copyPathAct = nullptr, *m_revealAct = nullptr;
+#ifdef ANGRA_HAVE_QPDF
+    QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
+            *m_optimizeAct = nullptr, *m_repairAct = nullptr;
+#endif
 };
+
+// Headless batch mode: returns an exit code, or -1 to launch the UI.
+// ANGRA.exe --to-text in.pdf out.txt | --to-images in.pdf outdir |
+//           --merge out.pdf in1.pdf in2.pdf...
+static int runCli(const QStringList& args) {
+    if (args.size() < 2 || !args.at(1).startsWith(QStringLiteral("--")))
+        return -1;
+    const QString cmd = args.at(1);
+    auto fail = [](const char* msg) {
+        std::fprintf(stderr, "%s\n", msg);
+        return 2;
+    };
+    if (cmd == QStringLiteral("--to-text") && args.size() == 4) {
+        PdfDocument doc;
+        if (doc.load(args.at(2)) != PdfDocument::Status::Ok)
+            return fail("cannot open input");
+        QStringList parts;
+        for (int i = 0; i < doc.pageCount(); ++i)
+            parts << doc.pageText(i);
+        QFile f(args.at(3));
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+            return fail("cannot write output");
+        f.write(parts.join(QStringLiteral("\n\n")).toUtf8());
+        return 0;
+    }
+    if (cmd == QStringLiteral("--to-images") && args.size() == 4) {
+        PdfDocument doc;
+        if (doc.load(args.at(2)) != PdfDocument::Status::Ok)
+            return fail("cannot open input");
+        for (int i = 0; i < doc.pageCount(); ++i) {
+            const QString dest = QDir(args.at(3)).filePath(
+                QStringLiteral("page-%1.png").arg(i + 1, 3, 10, QLatin1Char('0')));
+            if (!doc.renderPage(i, 2.0).save(dest))
+                return fail("cannot write image");
+        }
+        return 0;
+    }
+    if (cmd == QStringLiteral("--merge") && args.size() >= 5) {
+        PdfDocument out;
+        out.createEmpty();
+        for (int i = 3; i < args.size(); ++i) {
+            PdfDocument src;
+            if (src.load(args.at(i)) != PdfDocument::Status::Ok ||
+                !out.importAll(src, out.pageCount()))
+                return fail("cannot merge input");
+        }
+        QString err;
+        if (!out.saveCopy(args.at(2), &err))
+            return fail("save failed");
+        return 0;
+    }
+    std::fprintf(stderr, "usage: ANGRA --to-text in.pdf out.txt | "
+                         "--to-images in.pdf outdir | --merge out.pdf in1 in2...\n");
+    return 2;
+}
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
@@ -1014,6 +1319,10 @@ int main(int argc, char** argv) {
     QApplication::setApplicationName(theme::kAppName);
     QApplication::setApplicationVersion(theme::kAppVersion);
     PdfDocument::initLibrary();
+    if (const int cli = runCli(QApplication::arguments()); cli >= 0) {
+        PdfDocument::shutdownLibrary();
+        return cli;
+    }
     int rc;
     {
         MainWindow window;

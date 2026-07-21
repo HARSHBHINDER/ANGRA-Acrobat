@@ -34,3 +34,21 @@ add_executable(test_pdfdocument tests/test_pdfdocument.cpp)
 target_link_libraries(test_pdfdocument PRIVATE pdfcore)
 add_test(NAME pdfdocument
          COMMAND test_pdfdocument "${CMAKE_SOURCE_DIR}/resources/test.pdf")
+
+# qpdf (optional): enables encryption/decryption/sanitize/optimize/repair.
+set(QPDF_DIR "$ENV{QPDF_DIR}" CACHE PATH "qpdf root containing include/ and lib/")
+find_path(QPDF_INCLUDE_DIR qpdf/QPDF.hh HINTS "${QPDF_DIR}/include")
+find_library(QPDF_LIBRARY NAMES qpdf qpdf29 qpdf30 HINTS "${QPDF_DIR}/lib")
+if(QPDF_INCLUDE_DIR AND QPDF_LIBRARY)
+    target_sources(pdfcore PRIVATE src/PdfProtect.cpp)
+    target_include_directories(pdfcore PUBLIC "${QPDF_INCLUDE_DIR}")
+    target_link_libraries(pdfcore PUBLIC "${QPDF_LIBRARY}")
+    target_compile_definitions(pdfcore PUBLIC ANGRA_HAVE_QPDF)
+    file(GLOB QPDF_DLLS "${QPDF_DIR}/bin/*.dll")
+    foreach(dll ${QPDF_DLLS})
+        add_custom_command(TARGET ANGRA POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:ANGRA>")
+    endforeach()
+else()
+    message(STATUS "qpdf not found - protection features disabled (set QPDF_DIR)")
+endif()

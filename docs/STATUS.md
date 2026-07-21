@@ -1,13 +1,14 @@
 # Status
 
-Active milestone: compressed M2+M3+M4+M7 slice complete in source form -
-production viewer (tabs, thumbs, search, selection, bookmarks, links,
-password, print), annotations, page organization with safe save, and local
-conversions. Awaiting first CI build for compile/test verification.
+All feasible offline features are source-complete: viewer suite, annotations,
+forms fill, page organization, conversions, redaction (rasterize), qpdf-backed
+protection (encrypt/decrypt/sanitize/optimize/repair), compare, local share,
+CLI batch. Compile verification pends CI (no local toolchain).
 
 ## Exact commands
 
     $env:PDFIUM_DIR = "C:/pdfium"
+    $env:QPDF_DIR   = "C:/qpdf"    # optional; enables Protect/Tools extras
     cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="<Qt>/msvc2022_64"
     cmake --build build
     pwsh scripts/make-test-pdf.ps1
@@ -15,5 +16,4 @@ conversions. Awaiting first CI build for compile/test verification.
 
 ## Next vertical slice
 
-Background rendering with cancellation (unblocks large-document UX and is
-prerequisite for continuous scroll).
+Push to GitHub, fix whatever the first CI run flags, cut v0.2.0 draft release.

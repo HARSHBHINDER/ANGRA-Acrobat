@@ -25,6 +25,16 @@ jobs:
           tar -xzf pdfium.tgz -C pdfium
           "PDFIUM_DIR=$PWD/pdfium" | Out-File -Append $env:GITHUB_ENV
 
+      - name: Get prebuilt qpdf
+        shell: pwsh
+        run: |
+          $rel = Invoke-RestMethod https://api.github.com/repos/qpdf/qpdf/releases/latest
+          $asset = $rel.assets | Where-Object name -match "msvc64.zip$" | Select-Object -First 1
+          curl -L -o qpdf.zip $asset.browser_download_url
+          Expand-Archive qpdf.zip -DestinationPath qpdf-x
+          $root = Get-ChildItem qpdf-x -Directory | Select-Object -First 1
+          "QPDF_DIR=$($root.FullName)" | Out-File -Append $env:GITHUB_ENV
+
       - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure

@@ -6,10 +6,13 @@
 #include <algorithm>
 #include <climits>
 
+#include <QPainter>
+
 #include <fpdf_annot.h>
 #include <fpdf_doc.h>
 #include <fpdf_edit.h>
 #include <fpdf_flatten.h>
+#include <fpdf_formfill.h>
 #include <fpdf_ppo.h>
 #include <fpdf_save.h>
 #include <fpdf_text.h>
@@ -61,6 +64,7 @@ void PdfDocument::shutdownLibrary() { FPDF_DestroyLibrary(); }
 PdfDocument::~PdfDocument() { close(); }
 
 void PdfDocument::close() {
+    killForms();
     if (m_doc) {
         FPDF_CloseDocument(doc(m_doc));
         m_doc = nullptr;
@@ -69,6 +73,75 @@ void PdfDocument::close() {
     m_path.clear();
     m_password.clear();
     m_modified = false;
+}
+
+namespace {
+void ffiInvalidate(FPDF_FORMFILLINFO*, FPDF_PAGE, double, double, double, double) {}
+int ffiSetTimer(FPDF_FORMFILLINFO*, int, TimerCallback) { return 0; }
+void ffiKillTimer(FPDF_FORMFILLINFO*, int) {}
+FPDF_SYSTEMTIME ffiLocalTime(FPDF_FORMFILLINFO*) { return {}; }
+} // namespace
+
+void PdfDocument::initForms() {
+    if (!m_doc || m_form)
+        return;
+    auto* ffi = new FPDF_FORMFILLINFO();
+    ffi->version = 1;
+    ffi->FFI_Invalidate = &ffiInvalidate;
+    ffi->FFI_SetTimer = &ffiSetTimer;
+    ffi->FFI_KillTimer = &ffiKillTimer;
+    ffi->FFI_GetLocalTime = &ffiLocalTime;
+    m_ffi = ffi;
+    m_form = FPDFDOC_InitFormFillEnvironment(doc(m_doc), ffi);
+}
+
+void PdfDocument::killForms() {
+    if (m_form) {
+        FPDFDOC_ExitFormFillEnvironment(static_cast<FPDF_FORMHANDLE>(m_form));
+        m_form = nullptr;
+    }
+    delete static_cast<FPDF_FORMFILLINFO*>(m_ffi);
+    m_ffi = nullptr;
+}
+
+bool PdfDocument::hasForms() const {
+    return m_doc && FPDF_GetFormType(doc(m_doc)) != FORMTYPE_NONE;
+}
+
+void PdfDocument::formClick(int pageIndex, const QPointF& pagePt) {
+    if (!m_doc)
+        return;
+    initForms();
+    if (!m_form)
+        return;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return;
+    auto form = static_cast<FPDF_FORMHANDLE>(m_form);
+    FORM_OnAfterLoadPage(page.p, form);
+    const double y = FPDF_GetPageHeightF(page.p) - pagePt.y();
+    FORM_OnLButtonDown(form, page.p, 0, pagePt.x(), y);
+    FORM_OnLButtonUp(form, page.p, 0, pagePt.x(), y);
+    FORM_OnBeforeClosePage(page.p, form);
+    m_modified = true; // field focus/value may have changed
+}
+
+void PdfDocument::formChar(int pageIndex, int unicode) {
+    if (!m_doc || !m_form)
+        return;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return;
+    auto form = static_cast<FPDF_FORMHANDLE>(m_form);
+    FORM_OnAfterLoadPage(page.p, form);
+    FORM_OnChar(form, page.p, unicode, 0);
+    FORM_OnBeforeClosePage(page.p, form);
+    m_modified = true;
+}
+
+void PdfDocument::formKillFocus() {
+    if (m_form)
+        FORM_ForceToKillFocus(static_cast<FPDF_FORMHANDLE>(m_form));
 }
 
 PdfDocument::Status PdfDocument::load(const QString& path, const QString& password) {
@@ -93,6 +166,8 @@ PdfDocument::Status PdfDocument::load(const QString& path, const QString& passwo
     m_doc = d;
     m_path = path;
     m_password = pw;
+    if (FPDF_GetFormType(d) != FORMTYPE_NONE)
+        initForms(); // fields render and accept input from the start
     return Status::Ok;
 }
 
@@ -127,6 +202,12 @@ QImage PdfDocument::renderPage(int pageIndex, double scale) const {
     FPDF_BITMAP bitmap =
         FPDFBitmap_CreateEx(w, h, FPDFBitmap_BGRA, image.bits(), image.bytesPerLine());
     FPDF_RenderPageBitmap(bitmap, page.p, 0, 0, w, h, 0, FPDF_ANNOT | FPDF_LCD_TEXT);
+    if (m_form) {
+        auto form = static_cast<FPDF_FORMHANDLE>(m_form);
+        FORM_OnAfterLoadPage(page.p, form);
+        FPDF_FFLDraw(form, bitmap, page.p, 0, 0, w, h, 0, FPDF_ANNOT);
+        FORM_OnBeforeClosePage(page.p, form);
+    }
     FPDFBitmap_Destroy(bitmap);
     return image;
 }
@@ -315,11 +396,17 @@ bool PdfDocument::importRange(const PdfDocument& src, const QByteArray& range, i
 }
 
 bool PdfDocument::addImagePage(const QImage& image) {
-    if (!m_doc || image.isNull())
+    return insertImagePage(pageCount(),
+                           image,
+                           QSizeF(image.width() * 72.0 / 96.0, image.height() * 72.0 / 96.0));
+}
+
+bool PdfDocument::insertImagePage(int index, const QImage& image, const QSizeF& sizePts) {
+    if (!m_doc || image.isNull() || sizePts.isEmpty())
         return false;
-    const double wPt = image.width() * 72.0 / 96.0;
-    const double hPt = image.height() * 72.0 / 96.0;
-    FPDF_PAGE page = FPDFPage_New(doc(m_doc), pageCount(), wPt, hPt);
+    const double wPt = sizePts.width();
+    const double hPt = sizePts.height();
+    FPDF_PAGE page = FPDFPage_New(doc(m_doc), index, wPt, hPt);
     if (!page)
         return false;
     QImage img = image.convertToFormat(QImage::Format_ARGB32);
@@ -361,6 +448,32 @@ bool PdfDocument::addTextPage(const QStringList& lines) {
         if (lines.isEmpty())
             break;
     }
+    m_modified = true;
+    return true;
+}
+
+bool PdfDocument::redactRasterize(int pageIndex, const QList<QRectF>& rects) {
+    if (!m_doc || rects.isEmpty() || pageIndex < 0 || pageIndex >= pageCount())
+        return false;
+    const QSizeF pts = pageSizePoints(pageIndex);
+    if (pts.isEmpty())
+        return false;
+    const double scale = 2.0; // 144 dpi replacement bitmap
+    QImage img = renderPage(pageIndex, scale);
+    if (img.isNull())
+        return false;
+    QPainter p(&img);
+    p.setPen(Qt::NoPen);
+    p.setBrush(Qt::black);
+    for (const QRectF& r : rects)
+        p.drawRect(QRectF(r.left() * scale, r.top() * scale, r.width() * scale,
+                          r.height() * scale));
+    p.end();
+    // Insert the raster AFTER the original, then delete the original: the
+    // document never has fewer pages than expected if a step fails.
+    if (!insertImagePage(pageIndex + 1, img, pts))
+        return false;
+    FPDFPage_Delete(doc(m_doc), pageIndex);
     m_modified = true;
     return true;
 }

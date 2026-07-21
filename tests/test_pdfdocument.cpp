@@ -1,7 +1,11 @@
 // Smallest checks that fail if PdfDocument breaks. Run via ctest.
 #include "PdfDocument.h"
+#ifdef ANGRA_HAVE_QPDF
+#include "PdfProtect.h"
+#endif
 
 #include <QDir>
+#include <QFile>
 #include <cstdio>
 
 #define CHECK(x)                                                                                   \
@@ -90,6 +94,38 @@ int main(int argc, char** argv) {
         CHECK(one.importRange(src, "1", 0));
         CHECK(one.pageCount() == 1);
     }
+    {
+        // redaction destroys text: build a page with text, redact everything
+        PdfDocument out;
+        CHECK(out.createEmpty());
+        CHECK(out.addTextPage({QStringLiteral("secret content")}));
+        CHECK(out.pageText(0).contains(QStringLiteral("secret")));
+        const QSizeF pts = out.pageSizePoints(0);
+        CHECK(out.redactRasterize(0, {QRectF(0, 0, pts.width(), pts.height())}));
+        CHECK(out.pageCount() == 1);
+        CHECK(!out.pageText(0).contains(QStringLiteral("secret"))); // text is gone
+        const QString path = tmp + QStringLiteral("/angra-test-redact.pdf");
+        CHECK(out.saveCopy(path));
+        PdfDocument re;
+        CHECK(re.load(path) == PdfDocument::Status::Ok);
+        CHECK(!re.pageText(0).contains(QStringLiteral("secret")));
+    }
+#ifdef ANGRA_HAVE_QPDF
+    {
+        // encrypt roundtrip: no password fails, right password works
+        QByteArray bytes;
+        QString err;
+        CHECK(pdfprotect::encrypt(testPdf, {}, QStringLiteral("pw123"), {}, &bytes, &err));
+        const QString path = tmp + QStringLiteral("/angra-test-enc.pdf");
+        QFile f(path);
+        CHECK(f.open(QIODevice::WriteOnly) && f.write(bytes) == bytes.size());
+        f.close();
+        PdfDocument locked;
+        CHECK(locked.load(path) == PdfDocument::Status::PasswordRequired);
+        CHECK(locked.load(path, QStringLiteral("pw123")) == PdfDocument::Status::Ok);
+        CHECK(locked.pageCount() == 2);
+    }
+#endif
     PdfDocument::shutdownLibrary();
     std::puts("ok");
     return 0;

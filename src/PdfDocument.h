@@ -66,8 +66,19 @@ public:
     bool importAll(const PdfDocument& src, int insertAt);
     bool importRange(const PdfDocument& src, const QByteArray& range, int insertAt);
     bool addImagePage(const QImage& image);     // appended, sized to image at 96 dpi
+    bool insertImagePage(int index, const QImage& image, const QSizeF& sizePts);
     bool addTextPage(const QStringList& lines); // appended, US-letter, 11 pt
     bool flattenAllPages();
+
+    // True redaction: burn black boxes into a raster of the page, then
+    // REPLACE the page with that bitmap. Original text/vectors are gone.
+    bool redactRasterize(int pageIndex, const QList<QRectF>& rects);
+
+    // --- interactive forms (fill only) ---
+    bool hasForms() const;
+    void formClick(int pageIndex, const QPointF& pagePt);
+    void formChar(int pageIndex, int unicode);
+    void formKillFocus();
 
     // --- annotations (set the modified flag) ---
     bool addHighlight(int pageIndex, const QList<QRectF>& rects, const QColor& color);
@@ -80,11 +91,18 @@ public:
     // replace via QSaveFile. Source file is never left half-written.
     bool saveCopy(const QString& destPath, QString* error = nullptr);
 
+    QByteArray password() const { return m_password; }
+
     static void initLibrary();
     static void shutdownLibrary();
 
 private:
+    void initForms();
+    void killForms();
+
     void* m_doc = nullptr;
+    void* m_form = nullptr; // FPDF_FORMHANDLE
+    void* m_ffi = nullptr;  // FPDF_FORMFILLINFO, heap-owned so it outlives calls
     QByteArray m_data; // backing buffer; must outlive m_doc
     QString m_path;
     QByteArray m_password; // kept so saveCopy can validate its own output
