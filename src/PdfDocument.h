@@ -86,6 +86,21 @@ public:
     // page-object index returned by textObjectAt.
     QString textObjectAt(int pageIndex, const QPointF& pagePt, int* objIndex) const;
     bool setTextObject(int pageIndex, int objIndex, const QString& text);
+
+    // Styled replace: swap the run at objIndex for a new text object with the
+    // chosen family/size/style/color at the same position. family is one of
+    // "Helvetica","Times","Courier"; ttf (optional) embeds a custom TrueType
+    // font instead. underline draws a stroked line under the run.
+    struct TextStyle {
+        QString family = QStringLiteral("Helvetica");
+        float size = 12;
+        QColor color = Qt::black;
+        bool bold = false;
+        bool italic = false;
+        bool underline = false;
+    };
+    bool styleTextObject(int pageIndex, int objIndex, const QString& text,
+                         const TextStyle& style, const QByteArray& ttf = {});
     bool placeImage(int pageIndex, const QImage& image, const QPointF& pagePt,
                     double widthPt); // signature/stamp placement
     int extractImages(int pageIndex, const QString& dirPath,

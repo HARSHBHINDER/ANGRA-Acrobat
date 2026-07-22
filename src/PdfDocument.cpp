@@ -637,6 +637,86 @@ bool PdfDocument::setTextObject(int pageIndex, int objIndex, const QString& text
     return true;
 }
 
+// Map family + bold/italic to a PDF base-14 font name.
+static QByteArray base14Name(const QString& family, bool bold, bool italic) {
+    if (family.startsWith(QStringLiteral("Times"), Qt::CaseInsensitive)) {
+        if (bold && italic) return "Times-BoldItalic";
+        if (bold) return "Times-Bold";
+        if (italic) return "Times-Italic";
+        return "Times-Roman";
+    }
+    if (family.startsWith(QStringLiteral("Courier"), Qt::CaseInsensitive)) {
+        if (bold && italic) return "Courier-BoldOblique";
+        if (bold) return "Courier-Bold";
+        if (italic) return "Courier-Oblique";
+        return "Courier";
+    }
+    if (bold && italic) return "Helvetica-BoldOblique";
+    if (bold) return "Helvetica-Bold";
+    if (italic) return "Helvetica-Oblique";
+    return "Helvetica";
+}
+
+bool PdfDocument::styleTextObject(int pageIndex, int objIndex, const QString& text,
+                                  const TextStyle& style, const QByteArray& ttf) {
+    if (!m_doc || objIndex < 0 || text.isEmpty())
+        return false;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return false;
+    FPDF_PAGEOBJECT old = FPDFPage_GetObject(page.p, objIndex);
+    if (!old || FPDFPageObj_GetType(old) != FPDF_PAGEOBJ_TEXT)
+        return false;
+    // Keep the old run's position (translation from its matrix).
+    FS_MATRIX m{1, 0, 0, 1, 0, 0};
+    FPDFPageObj_GetMatrix(old, &m);
+    // ponytail: preserves position + font size only; old rotation/shear dropped.
+    // Upgrade to full matrix reuse when rotated text needs restyling.
+
+    FPDF_PAGEOBJECT obj;
+    if (!ttf.isEmpty()) {
+        FPDF_FONT font =
+            FPDFText_LoadFont(doc(m_doc), reinterpret_cast<const uint8_t*>(ttf.constData()),
+                              static_cast<uint32_t>(ttf.size()), FPDF_FONT_TRUETYPE, 0);
+        if (!font)
+            return false;
+        obj = FPDFPageObj_CreateTextObj(doc(m_doc), font, style.size);
+    } else {
+        obj = FPDFPageObj_NewTextObj(
+            doc(m_doc), base14Name(style.family, style.bold, style.italic).constData(),
+            style.size);
+    }
+    if (!obj)
+        return false;
+    FPDFText_SetText(obj, wide(text));
+    FPDFPageObj_SetFillColor(obj, style.color.red(), style.color.green(),
+                             style.color.blue(), style.color.alpha());
+    const FS_MATRIX place{1, 0, 0, 1, m.e, m.f};
+    FPDFPageObj_SetMatrix(obj, &place);
+
+    // Remove the old run, insert the new one.
+    FPDFPage_RemoveObject(page.p, old);
+    FPDFPageObj_Destroy(old);
+    FPDFPage_InsertObject(page.p, obj);
+    FPDFPage_GenerateContent(page.p); // finalize so bounds are valid
+
+    if (style.underline) {
+        float l, b, r, t;
+        if (FPDFPageObj_GetBounds(obj, &l, &b, &r, &t)) {
+            FPDF_PAGEOBJECT line = FPDFPageObj_CreateNewPath(l, b - 1);
+            FPDFPath_LineTo(line, r, b - 1);
+            FPDFPath_SetDrawMode(line, 0, 1); // no fill, stroke
+            FPDFPageObj_SetStrokeColor(line, style.color.red(), style.color.green(),
+                                       style.color.blue(), style.color.alpha());
+            FPDFPageObj_SetStrokeWidth(line, std::max(0.5f, style.size / 16.0f));
+            FPDFPage_InsertObject(page.p, line);
+            FPDFPage_GenerateContent(page.p);
+        }
+    }
+    m_modified = true;
+    return true;
+}
+
 bool PdfDocument::placeImage(int pageIndex, const QImage& image, const QPointF& pagePt,
                              double widthPt) {
     if (!m_doc || image.isNull() || widthPt <= 0)

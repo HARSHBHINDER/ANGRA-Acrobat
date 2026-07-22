@@ -6,8 +6,13 @@
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QCloseEvent>
+#include <QColorDialog>
+#include <QComboBox>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDockWidget>
@@ -30,10 +35,12 @@
 #include <QPrintDialog>
 #include <QPrinter>
 #include <QProcess>
+#include <QPushButton>
 #include <QRubberBand>
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QSettings>
+#include <QSpinBox>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QStyle>
@@ -1019,13 +1026,94 @@ private:
                 tr("Click a text run first (select tool), then Edit Text"));
             return;
         }
-        bool ok = false;
-        const QString edited =
-            QInputDialog::getText(this, tr("Edit Text"),
-                                  tr("Replace text (clear to delete):"), QLineEdit::Normal,
-                                  current, &ok);
-        if (ok && t->doc().setTextObject(t->page(), idx, edited))
+
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Edit Text"));
+        auto* form = new QFormLayout(&dlg);
+
+        auto* textEdit = new QLineEdit(current);
+        form->addRow(tr("Text (clear = delete run):"), textEdit);
+
+        auto* family = new QComboBox;
+        family->addItems({QStringLiteral("Helvetica"), QStringLiteral("Times"),
+                          QStringLiteral("Courier")});
+        form->addRow(tr("Font:"), family);
+
+        auto* size = new QSpinBox;
+        size->setRange(4, 400);
+        size->setValue(12);
+        form->addRow(tr("Size:"), size);
+
+        auto* bold = new QCheckBox(tr("Bold"));
+        auto* italic = new QCheckBox(tr("Italic"));
+        auto* underline = new QCheckBox(tr("Underline"));
+        auto* styleRow = new QHBoxLayout;
+        styleRow->addWidget(bold);
+        styleRow->addWidget(italic);
+        styleRow->addWidget(underline);
+        form->addRow(tr("Style:"), styleRow);
+
+        QColor chosen = Qt::black;
+        auto* colorBtn = new QPushButton(tr("Text Color..."));
+        QObject::connect(colorBtn, &QPushButton::clicked, &dlg, [&] {
+            const QColor c = QColorDialog::getColor(chosen, &dlg, tr("Text Color"));
+            if (c.isValid())
+                chosen = c;
+        });
+        form->addRow(QString(), colorBtn);
+
+        QByteArray ttf;
+        auto* fontFileBtn = new QPushButton(tr("Load Custom .ttf..."));
+        QObject::connect(fontFileBtn, &QPushButton::clicked, &dlg, [&] {
+            const QString p = QFileDialog::getOpenFileName(&dlg, tr("TrueType Font"), {},
+                                                           tr("Fonts (*.ttf)"));
+            if (p.isEmpty())
+                return;
+            QFile f(p);
+            if (f.open(QIODevice::ReadOnly)) {
+                ttf = f.readAll();
+                fontFileBtn->setText(QFileInfo(p).fileName());
+                family->setEnabled(false); // custom font wins over base-14
+            }
+        });
+        form->addRow(QString(), fontFileBtn);
+
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        form->addRow(buttons);
+
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+
+        const QString edited = textEdit->text();
+        if (edited.isEmpty()) { // delete
+            if (t->doc().setTextObject(t->page(), idx, {}))
+                t->render();
+            return;
+        }
+        // Unstyled edit (same font, black, no marks) -> cheap in-place path.
+        const bool styled = bold->isChecked() || italic->isChecked() ||
+                            underline->isChecked() || chosen != QColor(Qt::black) ||
+                            !ttf.isEmpty() || size->value() != 12 ||
+                            family->currentText() != QStringLiteral("Helvetica");
+        bool okDone;
+        if (!styled) {
+            okDone = t->doc().setTextObject(t->page(), idx, edited);
+        } else {
+            PdfDocument::TextStyle s;
+            s.family = family->currentText();
+            s.size = size->value();
+            s.color = chosen;
+            s.bold = bold->isChecked();
+            s.italic = italic->isChecked();
+            s.underline = underline->isChecked();
+            okDone = t->doc().styleTextObject(t->page(), idx, edited, s, ttf);
+        }
+        if (okDone)
             t->render();
+        else
+            QMessageBox::warning(this, theme::kAppName, tr("Could not apply the edit."));
     }
 
     void placeSignature() {

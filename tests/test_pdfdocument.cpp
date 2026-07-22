@@ -172,6 +172,25 @@ int main(int argc, char** argv) {
         CHECK(re.pageText(0).contains(QStringLiteral("changed")));
         CHECK(!re.pageText(0).contains(QStringLiteral("editme")));
         (void)pts;
+
+        // styled replace: bold Times, underlined, survives save/reload
+        int idx2 = -1;
+        QString found2;
+        for (int y = 40; y < 120 && idx2 < 0; y += 4)
+            found2 = re.textObjectAt(0, QPointF(70, y), &idx2);
+        CHECK(idx2 >= 0);
+        PdfDocument::TextStyle st;
+        st.family = QStringLiteral("Times");
+        st.size = 18;
+        st.bold = true;
+        st.underline = true;
+        st.color = QColor(200, 0, 0);
+        CHECK(re.styleTextObject(0, idx2, QStringLiteral("styled"), st));
+        const QString sp = tmp + QStringLiteral("/angra-test-styled.pdf");
+        CHECK(re.saveCopy(sp));
+        PdfDocument re2;
+        CHECK(re2.load(sp) == PdfDocument::Status::Ok);
+        CHECK(re2.pageText(0).contains(QStringLiteral("styled")));
     }
     PdfDocument::shutdownLibrary();
     std::puts("ok");
