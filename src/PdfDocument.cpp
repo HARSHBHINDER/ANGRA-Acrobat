@@ -5,6 +5,7 @@
 #include <QVarLengthArray>
 #include <algorithm>
 #include <climits>
+#include <cstdint>
 
 #include <QFont>
 #include <QFontMetricsF>

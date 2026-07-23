@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include <qpdf/Buffer.hh>
 #include <qpdf/Constants.h>
 #include <qpdf/QPDF.hh>
 #include <qpdf/QPDFObjectHandle.hh>
