@@ -101,6 +101,13 @@ public:
     };
     bool styleTextObject(int pageIndex, int objIndex, const QString& text,
                          const TextStyle& style, const QByteArray& ttf = {});
+
+    // Paragraph reflow (Acrobat "edit text box" style): delete every text run
+    // whose bounds fall inside rect, then greedy word-wrap `text` to rect's
+    // width using base-14 font metrics and re-emit it line by line from the
+    // top. rect is top-left-origin points.
+    bool reflowRegion(int pageIndex, const QRectF& rect, const QString& text,
+                      const TextStyle& style);
     bool placeImage(int pageIndex, const QImage& image, const QPointF& pagePt,
                     double widthPt); // signature/stamp placement
     int extractImages(int pageIndex, const QString& dirPath,

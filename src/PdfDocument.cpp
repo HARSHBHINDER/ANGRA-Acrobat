@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <climits>
 
+#include <QFont>
+#include <QFontMetricsF>
 #include <QPainter>
 
 #include <fpdf_annot.h>
@@ -713,6 +715,87 @@ bool PdfDocument::styleTextObject(int pageIndex, int objIndex, const QString& te
             FPDFPage_GenerateContent(page.p);
         }
     }
+    m_modified = true;
+    return true;
+}
+
+bool PdfDocument::reflowRegion(int pageIndex, const QRectF& rect, const QString& text,
+                               const TextStyle& style) {
+    if (!m_doc || rect.isEmpty())
+        return false;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return false;
+    const double h = FPDF_GetPageHeightF(page.p);
+    const float rl = rect.left(), rr = rect.right();
+    const float rtop = h - rect.top(), rbot = h - rect.bottom(); // PDF coords
+
+    // 1. delete text runs whose center falls inside the region
+    QList<FPDF_PAGEOBJECT> doomed;
+    const int count = FPDFPage_CountObjects(page.p);
+    for (int i = 0; i < count; ++i) {
+        FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, i);
+        if (FPDFPageObj_GetType(obj) != FPDF_PAGEOBJ_TEXT)
+            continue;
+        float l, b, r, t;
+        if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
+            continue;
+        const float cx = (l + r) / 2, cy = (b + t) / 2;
+        if (cx >= rl && cx <= rr && cy >= rbot && cy <= rtop)
+            doomed.append(obj);
+    }
+    for (FPDF_PAGEOBJECT obj : doomed) {
+        FPDFPage_RemoveObject(page.p, obj);
+        FPDFPageObj_Destroy(obj);
+    }
+
+    // 2. greedy word-wrap to rect width using base-14 metrics.
+    // ponytail: QFontMetrics of the platform font approximates the PDF base-14
+    // width; exact wrap would read the font's /Widths. Close enough to wrap.
+    QFont qf(style.family.startsWith(QStringLiteral("Times")) ? QStringLiteral("Times New Roman")
+             : style.family.startsWith(QStringLiteral("Courier")) ? QStringLiteral("Courier New")
+                                                                   : QStringLiteral("Arial"));
+    qf.setPointSizeF(style.size);
+    qf.setBold(style.bold);
+    qf.setItalic(style.italic);
+    const QFontMetricsF fm(qf);
+    const double maxW = rect.width();
+
+    QStringList lines;
+    for (const QString& para : text.split(QLatin1Char('\n'))) {
+        QString line;
+        for (const QString& word : para.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+            const QString probe = line.isEmpty() ? word : line + QLatin1Char(' ') + word;
+            if (fm.horizontalAdvance(probe) > maxW && !line.isEmpty()) {
+                lines << line;
+                line = word;
+            } else {
+                line = probe;
+            }
+        }
+        lines << line; // last line of paragraph (may be empty for blank line)
+    }
+
+    // 3. emit one text object per line from the top of the region downward
+    const QByteArray fontName = base14Name(style.family, style.bold, style.italic);
+    const double lead = style.size * 1.2;
+    double y = rtop - style.size;
+    for (const QString& line : lines) {
+        if (!line.isEmpty()) {
+            FPDF_PAGEOBJECT obj = FPDFPageObj_NewTextObj(doc(m_doc), fontName.constData(),
+                                                         style.size);
+            if (obj) {
+                FPDFText_SetText(obj, wide(line));
+                FPDFPageObj_SetFillColor(obj, style.color.red(), style.color.green(),
+                                         style.color.blue(), style.color.alpha());
+                const FS_MATRIX place{1, 0, 0, 1, rl, static_cast<float>(y)};
+                FPDFPageObj_SetMatrix(obj, &place);
+                FPDFPage_InsertObject(page.p, obj);
+            }
+        }
+        y -= lead;
+    }
+    FPDFPage_GenerateContent(page.p);
     m_modified = true;
     return true;
 }

@@ -711,6 +711,8 @@ private:
         });
         m_editTextAct = comment->addAction(tr("&Edit Text At Last Click..."),
                                            [this] { editTextAtClick(); });
+        m_editBoxAct = comment->addAction(tr("Edit Text &Box (reflow selection)..."),
+                                          [this] { editTextBox(); });
         m_signAct = comment->addAction(tr("Place &Signature Image At Last Click..."),
                                        [this] { placeSignature(); });
         comment->addSeparator();
@@ -1116,6 +1118,54 @@ private:
             QMessageBox::warning(this, theme::kAppName, tr("Could not apply the edit."));
     }
 
+    void editTextBox() {
+        auto* t = tab();
+        if (!t || t->selectionRects().isEmpty()) {
+            statusBar()->showMessage(
+                tr("Drag-select a paragraph region first, then Edit Text Box"));
+            return;
+        }
+        const QRectF rect = t->selectionRects().first();
+        const QString current = t->doc().textInRect(t->page(), rect);
+
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Edit Text Box (reflow)"));
+        auto* form = new QFormLayout(&dlg);
+        auto* editor = new QPlainTextEdit(current);
+        editor->setMinimumSize(420, 220);
+        form->addRow(editor);
+        auto* family = new QComboBox;
+        family->addItems({QStringLiteral("Helvetica"), QStringLiteral("Times"),
+                          QStringLiteral("Courier")});
+        form->addRow(tr("Font:"), family);
+        auto* size = new QSpinBox;
+        size->setRange(4, 200);
+        size->setValue(11);
+        form->addRow(tr("Size:"), size);
+        auto* bold = new QCheckBox(tr("Bold"));
+        auto* italic = new QCheckBox(tr("Italic"));
+        auto* row = new QHBoxLayout;
+        row->addWidget(bold);
+        row->addWidget(italic);
+        form->addRow(tr("Style:"), row);
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        form->addRow(buttons);
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+
+        PdfDocument::TextStyle s;
+        s.family = family->currentText();
+        s.size = size->value();
+        s.bold = bold->isChecked();
+        s.italic = italic->isChecked();
+        if (t->doc().reflowRegion(t->page(), rect, editor->toPlainText(), s))
+            t->render();
+        else
+            QMessageBox::warning(this, theme::kAppName, tr("Reflow failed."));
+    }
+
     void placeSignature() {
         auto* t = tab();
         if (!t)
@@ -1406,7 +1456,7 @@ private:
               m_toImagesAct, m_toJpgAct, m_toTextAct, m_copyAct, m_redactAct, m_compareAct,
               m_copyFileAct, m_copyPathAct, m_revealAct, m_cropAct, m_moveAct,
               m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct,
-              m_editTextAct})
+              m_editTextAct, m_editBoxAct})
             a->setEnabled(loaded);
 #ifdef ANGRA_HAVE_QPDF
         for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
@@ -1454,7 +1504,7 @@ private:
             *m_copyPathAct = nullptr, *m_revealAct = nullptr, *m_toJpgAct = nullptr,
             *m_cropAct = nullptr, *m_moveAct = nullptr, *m_pageNumAct = nullptr,
             *m_watermarkAct = nullptr, *m_extractImgAct = nullptr, *m_addTextAct = nullptr,
-            *m_signAct = nullptr, *m_editTextAct = nullptr;
+            *m_signAct = nullptr, *m_editTextAct = nullptr, *m_editBoxAct = nullptr;
 #ifdef ANGRA_HAVE_QPDF
     QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
             *m_optimizeAct = nullptr, *m_repairAct = nullptr;

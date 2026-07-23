@@ -191,6 +191,21 @@ int main(int argc, char** argv) {
         PdfDocument re2;
         CHECK(re2.load(sp) == PdfDocument::Status::Ok);
         CHECK(re2.pageText(0).contains(QStringLiteral("styled")));
+
+        // reflow region: wrap a long paragraph into a narrow box, verify words present
+        PdfDocument::TextStyle rs;
+        rs.family = QStringLiteral("Helvetica");
+        rs.size = 11;
+        const QString para =
+            QStringLiteral("the quick brown fox jumps over the lazy dog again and again");
+        CHECK(re2.reflowRegion(0, QRectF(72, 72, 150, 400), para, rs));
+        const QString rp = tmp + QStringLiteral("/angra-test-reflow.pdf");
+        CHECK(re2.saveCopy(rp));
+        PdfDocument re3;
+        CHECK(re3.load(rp) == PdfDocument::Status::Ok);
+        const QString out = re3.pageText(0);
+        CHECK(out.contains(QStringLiteral("quick")));
+        CHECK(out.contains(QStringLiteral("lazy")));
     }
     PdfDocument::shutdownLibrary();
     std::puts("ok");
