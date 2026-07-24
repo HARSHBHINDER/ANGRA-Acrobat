@@ -7,8 +7,6 @@
 #include <climits>
 #include <cstdint>
 
-#include <QFont>
-#include <QFontMetricsF>
 #include <QPainter>
 
 #include <fpdf_annot.h>
@@ -750,24 +748,22 @@ bool PdfDocument::reflowRegion(int pageIndex, const QRectF& rect, const QString&
         FPDFPageObj_Destroy(obj);
     }
 
-    // 2. greedy word-wrap to rect width using base-14 metrics.
-    // ponytail: QFontMetrics of the platform font approximates the PDF base-14
-    // width; exact wrap would read the font's /Widths. Close enough to wrap.
-    QFont qf(style.family.startsWith(QStringLiteral("Times")) ? QStringLiteral("Times New Roman")
-             : style.family.startsWith(QStringLiteral("Courier")) ? QStringLiteral("Courier New")
-                                                                   : QStringLiteral("Arial"));
-    qf.setPointSizeF(style.size);
-    qf.setBold(style.bold);
-    qf.setItalic(style.italic);
-    const QFontMetricsF fm(qf);
+    // 2. greedy word-wrap to rect width.
+    // ponytail: average glyph advance estimated from font size (~0.5em for the
+    // proportional base-14 fonts, ~0.6em for monospace Courier). Avoids a
+    // GUI-only QFontMetrics dependency so this runs headless (test/CLI); exact
+    // wrap would read the font's /Widths. Good enough for greedy wrapping.
+    const double emAvg =
+        style.size * (style.family.startsWith(QStringLiteral("Courier")) ? 0.6 : 0.5);
     const double maxW = rect.width();
+    auto advance = [emAvg](const QString& s) { return s.size() * emAvg; };
 
     QStringList lines;
     for (const QString& para : text.split(QLatin1Char('\n'))) {
         QString line;
         for (const QString& word : para.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
             const QString probe = line.isEmpty() ? word : line + QLatin1Char(' ') + word;
-            if (fm.horizontalAdvance(probe) > maxW && !line.isEmpty()) {
+            if (advance(probe) > maxW && !line.isEmpty()) {
                 lines << line;
                 line = word;
             } else {
