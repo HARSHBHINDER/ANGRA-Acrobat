@@ -1,17 +1,28 @@
-Apache License
-Version 2.0, January 2004
-http://www.apache.org/licenses/
+ANGRA Acrobat — Personal Use License
+Copyright (c) 2026 Harsh Bhinder
 
-Copyright 2024 ANGRA Acrobat Contributors
+Permission is granted to any individual to use, copy, and modify this
+software for PERSONAL, NON-COMMERCIAL purposes only, subject to the
+following conditions:
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not
-use this file except in compliance with the License. You may obtain a copy of
-the License at
+1. Non-commercial. You may not sell, rent, sublicense, or use this
+   software (in whole or in part) for commercial advantage or monetary
+   compensation.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+2. Attribution. The above copyright notice and this license shall be
+   included in all copies or substantial portions of the software.
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-License for the specific language governing permissions and limitations under
-the License.
+3. No trademark rights. This license grants no rights to any name, logo,
+   or brand.
+
+4. Third-party components. This software links against Qt, PDFium, and
+   qpdf, each distributed under its own license. Those licenses govern
+   those components and are unaffected by this one. See
+   THIRD_PARTY_NOTICES.md.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR
+THE USE OR OTHER DEALINGS IN THE SOFTWARE.

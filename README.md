@@ -1,6 +1,11 @@
 # ANGRA Acrobat
 
-An offline-first, open-source Windows PDF workstation. Apache-2.0.
+An offline-first Windows PDF workstation.
+
+> **Personal, non-commercial use only.** Source is public to read and build,
+> but you may not sell, sublicense, or use it commercially. See [LICENSE](LICENSE).
+> Third-party libraries (Qt, PDFium, qpdf) keep their own licenses — see
+> [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Status: M0+M1 — foundation and basic viewer
 
