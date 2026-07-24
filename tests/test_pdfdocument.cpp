@@ -16,12 +16,16 @@
         }                                                                                          \
     } while (0)
 
+// Breadcrumb: last line printed before a crash localizes the fault.
+#define MARK(tag) do { std::fprintf(stderr, "== %s\n", tag); std::fflush(stderr); } while (0)
+
 int main(int argc, char** argv) {
     CHECK(argc > 1);
     PdfDocument::initLibrary();
     const QString testPdf = QString::fromLocal8Bit(argv[1]);
     const QString tmp = QDir::tempPath();
     {
+        MARK("load+read");
         // load + read
         PdfDocument doc;
         CHECK(doc.load(testPdf) == PdfDocument::Status::Ok);
@@ -65,6 +69,7 @@ int main(int argc, char** argv) {
               PdfDocument::Status::FileError);
     }
     {
+        MARK("text->pdf");
         // text -> PDF -> text roundtrip
         PdfDocument out;
         CHECK(out.createEmpty());
@@ -77,6 +82,7 @@ int main(int argc, char** argv) {
         CHECK(re.pageText(0).contains(QStringLiteral("hello angra roundtrip")));
     }
     {
+        MARK("image->pdf");
         // image -> PDF
         QImage img(100, 80, QImage::Format_ARGB32);
         img.fill(Qt::blue);
@@ -95,6 +101,7 @@ int main(int argc, char** argv) {
         CHECK(one.pageCount() == 1);
     }
     {
+        MARK("redaction");
         // redaction destroys text: build a page with text, redact everything
         PdfDocument out;
         CHECK(out.createEmpty());
@@ -127,6 +134,7 @@ int main(int argc, char** argv) {
     }
 #endif
     {
+        MARK("stamping+geometry");
         // stamping + geometry: crop, move, page numbers, watermark, place image
         PdfDocument d;
         CHECK(d.load(testPdf) == PdfDocument::Status::Ok);
@@ -152,6 +160,7 @@ int main(int argc, char** argv) {
         CHECK(re.extractImages(0, tmp, QStringLiteral("angra-test-extract")) >= 1);
     }
     {
+        MARK("edit-text");
         // edit existing text: create a page with known text, find it, replace it
         PdfDocument d;
         CHECK(d.createEmpty());
@@ -173,6 +182,7 @@ int main(int argc, char** argv) {
         CHECK(!re.pageText(0).contains(QStringLiteral("editme")));
         (void)pts;
 
+        MARK("styled-replace");
         // styled replace: bold Times, underlined, survives save/reload
         int idx2 = -1;
         QString found2;
@@ -192,6 +202,7 @@ int main(int argc, char** argv) {
         CHECK(re2.load(sp) == PdfDocument::Status::Ok);
         CHECK(re2.pageText(0).contains(QStringLiteral("styled")));
 
+        MARK("reflow");
         // reflow region: wrap a long paragraph into a narrow box, verify words present
         PdfDocument::TextStyle rs;
         rs.family = QStringLiteral("Helvetica");
