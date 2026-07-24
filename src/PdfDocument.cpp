@@ -816,8 +816,8 @@ bool PdfDocument::placeImage(int pageIndex, const QImage& image, const QPointF& 
     FPDF_PAGEOBJECT obj = FPDFPageObj_NewImageObj(doc(m_doc));
     FPDFImageObj_SetBitmap(&page.p, 1, obj, bmp);
     FPDFPageObj_Transform(obj, widthPt, 0, 0, hPt, pagePt.x(), h - pagePt.y() - hPt);
-    FPDFPage_InsertObject(page, obj);
-    FPDFPage_GenerateContent(page);
+    FPDFPage_InsertObject(page.p, obj);
+    FPDFPage_GenerateContent(page.p);
     FPDFBitmap_Destroy(bmp);
     m_modified = true;
     return true;

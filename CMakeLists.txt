@@ -4,6 +4,13 @@ project(AngraAcrobat VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# windows.h (pulled in by PDFium/qpdf) defines min/max macros that break
+# std::min/std::max. NOMINMAX suppresses them; WIN32_LEAN_AND_MEAN trims the
+# header. Applies to every target.
+if(WIN32)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets PrintSupport)
 
 # PDFium: prebuilt binary drop, root given by PDFIUM_DIR (cache var or env).
