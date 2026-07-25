@@ -17,6 +17,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=..\LICENSE
 UninstallDisplayIcon={app}\{#AppExe}
 DisableProgramGroupPage=yes
+; Wizard window and Add/Remove Programs entry, not just installed shortcuts.
+SetupIconFile=..\resources\icon.ico
 
 [Tasks]
 Name: desktopicon; Description: "Create a &desktop shortcut"; Flags: unchecked
@@ -37,4 +39,6 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 [Registry]
 Root: HKA; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: string; ValueName: "AngraAcrobat.pdf"; ValueData: ""; Tasks: pdfassoc; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\AngraAcrobat.pdf"; ValueType: string; ValueData: "PDF Document"; Tasks: pdfassoc; Flags: uninsdeletekey
+; Associated PDFs show the app icon in Explorer, not a blank sheet.
+Root: HKA; Subkey: "Software\Classes\AngraAcrobat.pdf\DefaultIcon"; ValueType: string; ValueData: "{app}\{#AppExe},0"; Tasks: pdfassoc
 Root: HKA; Subkey: "Software\Classes\AngraAcrobat.pdf\shell\open\command"; ValueType: string; ValueData: """{app}\{#AppExe}"" ""%1"""; Tasks: pdfassoc

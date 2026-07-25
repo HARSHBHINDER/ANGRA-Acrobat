@@ -26,9 +26,16 @@ add_library(pdfcore STATIC src/PdfDocument.cpp)
 target_include_directories(pdfcore PUBLIC src "${PDFIUM_INCLUDE_DIR}")
 target_link_libraries(pdfcore PUBLIC Qt6::Gui "${PDFIUM_LIBRARY}")
 
-add_executable(ANGRA WIN32 src/main.cpp)
+# resources/angra.rc carries IDI_ICON1, which is what Explorer, the taskbar and
+# the installer shortcuts read. MSVC compiles .rc files with no extra setup.
+add_executable(ANGRA WIN32 src/main.cpp $<$<BOOL:${WIN32}>:resources/angra.rc>)
 target_link_libraries(ANGRA PRIVATE pdfcore Qt6::Widgets Qt6::PrintSupport)
 set_target_properties(ANGRA PROPERTIES OUTPUT_NAME "ANGRA")
+
+# Same artwork again, this time inside the binary for the window icon and the
+# start screen. AUTORCC keeps it to one property instead of a codegen step.
+set_target_properties(ANGRA PROPERTIES AUTORCC ON)
+target_sources(ANGRA PRIVATE resources/angra.qrc)
 
 if(EXISTS "${PDFIUM_DIR}/bin/pdfium.dll")
     add_custom_command(TARGET ANGRA POST_BUILD

@@ -1,0 +1,4 @@
+// Windows resource script: gives ANGRA.exe its Explorer/taskbar/shortcut icon.
+// IDI_ICON1 (id 1) is the id Windows uses for an executable's main icon, and is
+// what Qt picks up for the window and taskbar automatically.
+IDI_ICON1 ICON "icon.ico"

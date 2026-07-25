@@ -1,0 +1,8 @@
+<!DOCTYPE RCC>
+<!-- Compiled into the binary so the in-app logo needs no file on disk and
+     survives the portable ZIP being moved anywhere. -->
+<RCC version="1.0">
+  <qresource prefix="/angra">
+    <file>icon.png</file>
+  </qresource>
+</RCC>

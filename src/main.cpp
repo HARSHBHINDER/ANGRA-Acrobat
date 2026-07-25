@@ -19,6 +19,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDialog>
@@ -889,6 +890,12 @@ private:
                              openPath(item->data(Qt::UserRole).toString());
                          });
 
+        auto* mark = new QLabel;
+        mark->setAlignment(Qt::AlignCenter);
+        mark->setPixmap(QIcon(QString::fromUtf8(theme::kIconResource))
+                            .pixmap(QSize(theme::kStartLogoPx, theme::kStartLogoPx)));
+        col->addWidget(mark, 0, Qt::AlignCenter);
+        col->addSpacing(18);
         col->addWidget(label(QString::fromUtf8(theme::kAppName), "startTitle"));
         col->addSpacing(7);
         col->addWidget(label(tr("Offline PDF workstation - nothing leaves this machine"),
@@ -1796,6 +1803,9 @@ int main(int argc, char** argv) {
     QApplication::setOrganizationName(QStringLiteral("ANGRA"));
     QApplication::setApplicationName(theme::kAppName);
     QApplication::setApplicationVersion(theme::kAppVersion);
+    // Explicit rather than relying on the .rc alone: this also covers dialogs,
+    // and any non-Windows build where IDI_ICON1 does not exist.
+    QApplication::setWindowIcon(QIcon(QString::fromUtf8(theme::kIconResource)));
     // Fusion first: it ignores the Windows native theme, so the stylesheet
     // renders the same on every machine instead of fighting the OS palette.
     QApplication::setStyle(QStringLiteral("Fusion"));

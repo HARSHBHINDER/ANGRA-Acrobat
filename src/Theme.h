@@ -5,6 +5,11 @@ namespace theme {
 inline constexpr const char* kAppName = "ANGRA Acrobat";
 inline constexpr const char* kAppVersion = "0.1.0";
 
+// Compiled into the binary by resources/angra.qrc. The executable's Explorer
+// and taskbar icon comes from resources/angra.rc (IDI_ICON1) instead.
+inline constexpr const char* kIconResource = ":/angra/icon.png";
+inline constexpr int kStartLogoPx = 112;
+
 // Canvas sits darker than the chrome so white pages read as the focal point.
 inline constexpr const char* kCanvasBackground = "#0d1117";
 inline constexpr int kCanvasMargin = 12;
