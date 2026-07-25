@@ -50,6 +50,7 @@ pwsh scripts/gen-checksums.ps1          # -> dist/windows/SHA256SUMS.txt
 
 ## Documentation
 
+- [docs/ADR-001-pdf-engine.md](docs/ADR-001-pdf-engine.md) — engine choice, and the limits of "lossless"
 - [docs/PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)
