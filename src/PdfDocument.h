@@ -82,10 +82,10 @@ public:
     bool addTextWatermark(const QString& text); // diagonal gray, every page
     bool addTextAt(int pageIndex, const QPointF& pagePt, const QString& text);
 
-    // Edit existing text: find the topmost text object under a click, read its
-    // string, then replace (empty text deletes the object). objIndex is the
-    // page-object index returned by textObjectAt.
-    QString textObjectAt(int pageIndex, const QPointF& pagePt, int* objIndex) const;
+    // Replace a text run by page-object index, which comes from pageObjects()
+    // or textRuns(). Empty text deletes the object. There is deliberately no
+    // "find the text under this point" overload: objectsAt() is the one hit
+    // test, so what the user sees selected is what gets edited.
     bool setTextObject(int pageIndex, int objIndex, const QString& text);
 
     // True when the last text write could not encode through the run's own

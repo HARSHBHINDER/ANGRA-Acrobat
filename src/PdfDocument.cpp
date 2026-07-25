@@ -583,45 +583,6 @@ bool PdfDocument::addTextAt(int pageIndex, const QPointF& pagePt, const QString&
     return true;
 }
 
-QString PdfDocument::textObjectAt(int pageIndex, const QPointF& pagePt, int* objIndex) const {
-    if (objIndex)
-        *objIndex = -1;
-    if (!m_doc)
-        return {};
-    Page page(m_doc, pageIndex);
-    if (!page)
-        return {};
-    TextPage tp(page.p);
-    if (!tp)
-        return {};
-    const double h = FPDF_GetPageHeightF(page.p);
-    const double px = pagePt.x(), py = h - pagePt.y(); // to PDF coords
-    const int count = FPDFPage_CountObjects(page.p);
-    // A text run's bounds are only as tall as its glyphs, so an exact hit test
-    // turns clicking a line of 10pt body text into a pixel hunt. Pad the box.
-    constexpr double kHitPad = 3.0;
-    // topmost = last in draw order; scan back to front
-    for (int i = count - 1; i >= 0; --i) {
-        FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, i);
-        if (FPDFPageObj_GetType(obj) != FPDF_PAGEOBJ_TEXT)
-            continue;
-        float l, b, r, t;
-        if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
-            continue;
-        if (px < l - kHitPad || px > r + kHitPad || py < b - kHitPad || py > t + kHitPad)
-            continue;
-        const unsigned long bytes = FPDFTextObj_GetText(obj, tp.t, nullptr, 0);
-        if (bytes < 2)
-            continue; // empty or undecodable run: keep looking beneath it
-        QVarLengthArray<unsigned short, 256> buf(bytes / 2);
-        FPDFTextObj_GetText(obj, tp.t, buf.data(), bytes);
-        if (objIndex)
-            *objIndex = i;
-        return fromUtf16Buffer(buf, bytes);
-    }
-    return {};
-}
-
 // Oriented outline in top-down page points. PDFium reports the rotated bounds
 // directly; the axis-aligned bounds are the fallback when it cannot, which is
 // also the correct answer for anything unrotated.

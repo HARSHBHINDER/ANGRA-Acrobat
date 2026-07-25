@@ -70,7 +70,8 @@ public:
     enum class Tool { Select, Ink };
     enum class FitMode { Custom, Page, Width };
 
-    std::function<void()> onChanged; // set by MainWindow: refresh actions/panels
+    std::function<void()> onChanged;      // set by MainWindow: refresh actions/panels
+    std::function<void()> onEditRequested; // double-click on a selected text run
 
     DocumentTab() {
         auto* splitter = new QSplitter(this);
@@ -382,6 +383,22 @@ public:
     bool canUndo() const { return !m_undo.isEmpty(); }
     bool canRedo() const { return !m_redo.isEmpty(); }
 
+    // The selection drives text editing. There used to be a second hit test
+    // keyed off an invisible "last click", which could disagree with what was
+    // highlighted - so Edit Text refused runs the user could plainly see
+    // selected. One hit test, and you edit exactly what is outlined.
+    int selectedTextIndex() const {
+        if (m_selected < 0 || m_selected >= m_objects.size())
+            return -1;
+        const PdfDocument::PageObject& o = m_objects.at(m_selected);
+        return o.kind == PdfDocument::ObjectKind::Text ? o.index : -1;
+    }
+    QString selectedTextValue() const {
+        return (m_selected >= 0 && m_selected < m_objects.size())
+                   ? m_objects.at(m_selected).text
+                   : QString();
+    }
+
     // --- search: page-granular; highlights every match on the found page ---
     bool search(const QString& term, int fromPage) {
         if (!m_doc.isLoaded() || term.isEmpty())
@@ -479,6 +496,15 @@ protected:
             return QWidget::eventFilter(obj, ev);
         const auto* me = static_cast<QMouseEvent*>(ev);
         switch (ev->type()) {
+        case QEvent::MouseButtonDblClick:
+            // Select whatever is under the cursor, then edit it if it is text.
+            if (m_showBounds && me->button() == Qt::LeftButton) {
+                selectAt(toPagePt(me->position().toPoint()));
+                if (selectedTextIndex() >= 0 && onEditRequested)
+                    onEditRequested();
+                return true;
+            }
+            break;
         case QEvent::MouseButtonPress:
             if (me->button() == Qt::LeftButton) {
                 m_dragStart = me->position().toPoint();
@@ -729,6 +755,7 @@ public:
         }
         auto* t = new DocumentTab;
         t->onChanged = [this] { updateUi(); };
+        t->onEditRequested = [this] { editTextAtClick(); };
         if (!t->open(path)) {
             delete t;
             return;
@@ -996,7 +1023,8 @@ private:
         m_scanAct = comment->addAction(tr("&Scan Text On Page..."),
                                        QKeySequence(Qt::CTRL | Qt::Key_T),
                                        [this] { scanTextRuns(); });
-        m_editTextAct = comment->addAction(tr("&Edit Text At Last Click..."),
+        m_editTextAct = comment->addAction(tr("&Edit Selected Text..."),
+                                           QKeySequence(Qt::Key_F2),
                                            [this] { editTextAtClick(); });
         m_editBoxAct = comment->addAction(tr("Edit Text &Box (reflow selection)..."),
                                           [this] { editTextBox(); });
@@ -1427,7 +1455,7 @@ private:
 
         section(tr("EDIT TEXT"));
         entry(m_scanAct, tr("Scan text on page"));
-        entry(m_editTextAct, tr("Edit text at click"));
+        entry(m_editTextAct, tr("Edit selected text"));
         entry(m_editBoxAct, tr("Reflow text box"));
 
         section(tr("COMMENT"));
@@ -1700,13 +1728,15 @@ private:
         auto* t = tab();
         if (!t)
             return;
-        int idx = -1;
-        const QString current = t->doc().textObjectAt(t->page(), t->lastClickPagePt(), &idx);
+        const int idx = t->selectedTextIndex();
         if (idx < 0) {
             statusBar()->showMessage(
-                tr("Click a text run first (select tool), then Edit Text"));
+                t->showBounds()
+                    ? tr("Select a text object first - the highlighted one is not text")
+                    : tr("Turn on Show Object Boundaries (Ctrl+B), then click the text"));
             return;
         }
+        const QString current = t->selectedTextValue();
 
         QDialog dlg(this);
         dlg.setWindowTitle(tr("Edit Text"));

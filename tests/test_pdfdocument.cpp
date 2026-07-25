@@ -167,17 +167,21 @@ int main(int argc, char** argv) {
         CHECK(d.addTextPage({QStringLiteral("editme")}));
         const QSizeF pts = d.pageSizePoints(0);
         // text sits near top-left margin (54pt, ~ top); probe a band of y values
+        // The app edits whatever objectsAt selected, so the test resolves the
+        // run the same way instead of through a second point-based lookup.
         int idx = -1;
         QString found;
-        for (int y = 40; y < 120 && idx < 0; y += 4)
-            found = d.textObjectAt(0, QPointF(70, y), &idx);
+        for (const PdfDocument::TextRun& r : d.textRuns(0))
+            if (r.text.contains(QStringLiteral("editme"))) {
+                idx = r.index;
+                found = r.text;
+            }
         CHECK(idx >= 0);
         CHECK(found.contains(QStringLiteral("editme")));
-        // A click in the blank margin hits nothing and must report -1 rather
-        // than aborting the object scan (regression: empty runs returned early).
-        int idxBlank = 0;
-        CHECK(d.textObjectAt(0, QPointF(5, 5), &idxBlank).isEmpty());
-        CHECK(idxBlank == -1);
+        // clicking the run selects it; the blank margin selects nothing
+        const QList<PdfDocument::PageObject> objs0 = d.pageObjects(0);
+        CHECK(!PdfDocument::objectsAt(objs0, d.textRuns(0).first().rect.center()).isEmpty());
+        CHECK(PdfDocument::objectsAt(objs0, QPointF(5, 5)).isEmpty());
         CHECK(d.setTextObject(0, idx, QStringLiteral("changed")));
         const QString path = tmp + QStringLiteral("/angra-test-edit.pdf");
         CHECK(d.saveCopy(path));
@@ -346,9 +350,9 @@ int main(int argc, char** argv) {
         MARK("styled-replace");
         // styled replace: bold Times, underlined, survives save/reload
         int idx2 = -1;
-        QString found2;
-        for (int y = 40; y < 120 && idx2 < 0; y += 4)
-            found2 = re.textObjectAt(0, QPointF(70, y), &idx2);
+        for (const PdfDocument::TextRun& r : re.textRuns(0))
+            if (r.text.contains(QStringLiteral("changed")))
+                idx2 = r.index;
         CHECK(idx2 >= 0);
         PdfDocument::TextStyle st;
         st.family = QStringLiteral("Times");
