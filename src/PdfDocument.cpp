@@ -4,6 +4,7 @@
 #include <QSaveFile>
 #include <QVarLengthArray>
 #include <algorithm>
+#include <cmath>
 #include <climits>
 #include <cstdint>
 
@@ -623,13 +624,33 @@ QString PdfDocument::textObjectAt(int pageIndex, const QPointF& pagePt, int* obj
 // Oriented outline in top-down page points. PDFium reports the rotated bounds
 // directly; the axis-aligned bounds are the fallback when it cannot, which is
 // also the correct answer for anything unrotated.
+// FS_QUADPOINTSF follows the PDF /QuadPoints convention: upper-left,
+// upper-right, lower-LEFT, lower-right. That is a Z-order, not a traversal
+// order, so using it directly builds a bowtie whose interior excludes the
+// middle of the object - which silently breaks both hit testing and the
+// outline. Sorting by angle around the centroid yields a convex ring
+// regardless of which order the engine used.
+static QPolygonF orderedQuad(QPolygonF quad) {
+    if (quad.size() != 4)
+        return quad;
+    QPointF centre;
+    for (const QPointF& p : quad)
+        centre += p;
+    centre /= 4.0;
+    std::sort(quad.begin(), quad.end(), [centre](const QPointF& a, const QPointF& b) {
+        return std::atan2(a.y() - centre.y(), a.x() - centre.x()) <
+               std::atan2(b.y() - centre.y(), b.x() - centre.x());
+    });
+    return quad;
+}
+
 static QPolygonF objectQuad(FPDF_PAGEOBJECT obj, double pageHeight) {
     FS_QUADPOINTSF q{};
     if (FPDFPageObj_GetRotatedBounds(obj, &q))
-        return QPolygonF({QPointF(q.x1, pageHeight - q.y1),
-                          QPointF(q.x2, pageHeight - q.y2),
-                          QPointF(q.x3, pageHeight - q.y3),
-                          QPointF(q.x4, pageHeight - q.y4)});
+        return orderedQuad(QPolygonF({QPointF(q.x1, pageHeight - q.y1),
+                                      QPointF(q.x2, pageHeight - q.y2),
+                                      QPointF(q.x3, pageHeight - q.y3),
+                                      QPointF(q.x4, pageHeight - q.y4)}));
     float l, b, r, t;
     if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
         return {};

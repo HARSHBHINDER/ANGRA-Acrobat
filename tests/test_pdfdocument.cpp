@@ -209,6 +209,21 @@ int main(int argc, char** argv) {
                                      QPointF(300, 280), QPointF(260, 240)});
             turned.bounds = turned.quad.boundingRect();
 
+            // Regression: PDFium hands back /QuadPoints Z-order (UL, UR, LL,
+            // LR). Used as a traversal order that is a bowtie whose interior
+            // excludes the object's middle, so every click missed. pageObjects
+            // must reorder it into a convex ring before storing it.
+            const QList<PdfDocument::PageObject> real = d.pageObjects(0);
+            CHECK(!real.isEmpty());
+            for (const PdfDocument::PageObject& o : real) {
+                CHECK(o.quad.size() == 4);
+                // A bowtie's odd-even interior excludes the middle, so this is
+                // the assertion that fails when the point order is wrong.
+                const QPointF centre = o.bounds.center();
+                CHECK(o.quad.containsPoint(centre, Qt::OddEvenFill));
+                CHECK(!PdfDocument::objectsAt(real, centre).isEmpty());
+            }
+
             const QList<PdfDocument::PageObject> objs{flat, turned};
             // 1. unrotated hit
             CHECK(PdfDocument::objectsAt(objs, QPointF(140, 110)).contains(0));
