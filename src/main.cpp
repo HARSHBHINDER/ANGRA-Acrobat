@@ -493,7 +493,6 @@ public:
         m_bookmarkDock = dock;
 
         buildToolbarAndMenus();
-        buildToolPanel(); // after the menus: it reuses the actions they create
         statusBar()->showMessage(tr("Ready"));
         syncCentral();
         updateUi();
@@ -642,7 +641,6 @@ private:
 
         // View
         QMenu* view = menuBar()->addMenu(tr("&View"));
-        m_viewMenu = view;
         view->addAction(m_zoomInAct);
         view->addAction(m_zoomOutAct);
         view->addAction(m_fitPageAct);
@@ -856,6 +854,8 @@ private:
                    "PDFium and qpdf; see THIRD_PARTY_NOTICES.md.")
                     .arg(theme::kAppName, theme::kAppVersion));
         });
+
+        buildToolPanel(view); // last: the rail reuses every action created above
     }
 
     // Start screen. Recents come from the same QSettings list the File menu
@@ -875,12 +875,10 @@ private:
         };
 
         auto* open = new QPushButton(tr("Open a PDF"));
-        open->setDefault(true);
         open->setMinimumWidth(210);
         open->setCursor(Qt::PointingHandCursor);
         QObject::connect(open, &QPushButton::clicked, open, [this] { openDialog(); });
 
-        m_recentLabel = label(tr("RECENT"), "toolSection");
         m_recentList = new QListWidget;
         m_recentList->setObjectName(QStringLiteral("startRecents"));
         m_recentList->setFixedWidth(370);
@@ -905,7 +903,6 @@ private:
         col->addSpacing(11);
         col->addWidget(label(tr("or drop a PDF anywhere in this window"), "startHint"));
         col->addSpacing(30);
-        col->addWidget(m_recentLabel, 0, Qt::AlignCenter);
         col->addWidget(m_recentList, 0, Qt::AlignCenter);
         return page;
     }
@@ -924,9 +921,7 @@ private:
                 item->setData(Qt::UserRole, path);
                 m_recentList->addItem(item);
             }
-            const bool any = m_recentList->count() > 0;
-            m_recentList->setVisible(any);
-            m_recentLabel->setVisible(any);
+            m_recentList->setVisible(m_recentList->count() > 0);
         }
         m_stack->setCurrentIndex(empty ? 0 : 1);
     }
@@ -934,7 +929,7 @@ private:
     // Left tool rail. Every action here already exists in the menus - this is
     // discovery, not new behaviour. QToolButton mirrors its default action, so
     // updateUi() enables the whole panel for free with no extra wiring.
-    void buildToolPanel() {
+    void buildToolPanel(QMenu* view) {
         auto* panel = new QWidget;
         panel->setObjectName(QStringLiteral("toolPanel"));
         auto* col = new QVBoxLayout(panel);
@@ -949,8 +944,6 @@ private:
         // iconText (not text) is what QToolButton renders, and setting it here
         // keeps the long, mnemonic-bearing menu text intact.
         auto entry = [&](QAction* action, const QString& label) {
-            if (!action)
-                return;
             action->setIconText(label);
             auto* button = new QToolButton;
             button->setObjectName(QStringLiteral("toolButton"));
@@ -1021,7 +1014,7 @@ private:
         dock->setWidget(scroll);
         dock->setMinimumWidth(206);
         addDockWidget(Qt::LeftDockWidgetArea, dock);
-        m_viewMenu->addAction(dock->toggleViewAction());
+        view->addAction(dock->toggleViewAction());
     }
 
     // ---------- commands ----------
@@ -1714,13 +1707,11 @@ private:
     QTabWidget* m_tabs = nullptr;
     QStackedWidget* m_stack = nullptr;
     QListWidget* m_recentList = nullptr;
-    QLabel* m_recentLabel = nullptr;
     QTreeWidget* m_bookmarkTree = nullptr;
     QDockWidget* m_bookmarkDock = nullptr;
     QLineEdit* m_searchEdit = nullptr;
     QLabel* m_pageLabel = nullptr;
     QMenu* m_recentMenu = nullptr;
-    QMenu* m_viewMenu = nullptr;
 
     QAction *m_openAct = nullptr, *m_saveAct = nullptr, *m_prevAct = nullptr,
             *m_nextAct = nullptr, *m_zoomInAct = nullptr, *m_zoomOutAct = nullptr,
@@ -1803,9 +1794,6 @@ int main(int argc, char** argv) {
     QApplication::setOrganizationName(QStringLiteral("ANGRA"));
     QApplication::setApplicationName(theme::kAppName);
     QApplication::setApplicationVersion(theme::kAppVersion);
-    // Explicit rather than relying on the .rc alone: this also covers dialogs,
-    // and any non-Windows build where IDI_ICON1 does not exist.
-    QApplication::setWindowIcon(QIcon(QString::fromUtf8(theme::kIconResource)));
     // Fusion first: it ignores the Windows native theme, so the stylesheet
     // renders the same on every machine instead of fighting the OS palette.
     QApplication::setStyle(QStringLiteral("Fusion"));
