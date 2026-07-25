@@ -11,6 +11,7 @@
 #include <QPainter>
 
 #include <fpdf_annot.h>
+#include <fpdf_attachment.h>
 #include <fpdf_doc.h>
 #include <fpdf_edit.h>
 #include <fpdf_flatten.h>
@@ -815,6 +816,69 @@ bool PdfDocument::setTextObject(int pageIndex, int objIndex, const QString& text
         m_fontSubstituted = true;
     }
     FPDFPage_GenerateContent(page.p);
+    m_modified = true;
+    return true;
+}
+
+QList<PdfDocument::Attachment> PdfDocument::attachments() const {
+    QList<Attachment> list;
+    if (!m_doc)
+        return list;
+    const int count = FPDFDoc_GetAttachmentCount(doc(m_doc));
+    for (int i = 0; i < count; ++i) {
+        FPDF_ATTACHMENT a = FPDFDoc_GetAttachment(doc(m_doc), i);
+        if (!a)
+            continue;
+        Attachment at;
+        const unsigned long bytes = FPDFAttachment_GetName(a, nullptr, 0);
+        if (bytes >= 2) {
+            QVarLengthArray<unsigned short, 256> buf(bytes / 2);
+            FPDFAttachment_GetName(a, buf.data(), bytes);
+            at.name = fromUtf16Buffer(buf, bytes);
+        }
+        unsigned long len = 0;
+        FPDFAttachment_GetFile(a, nullptr, 0, &len); // query size only
+        at.size = static_cast<int>(len);
+        list.append(at);
+    }
+    return list;
+}
+
+bool PdfDocument::addAttachment(const QString& name, const QByteArray& data) {
+    if (!m_doc || name.isEmpty())
+        return false;
+    // wide() points into name's own buffer, so name must outlive the call.
+    FPDF_ATTACHMENT a = FPDFDoc_AddAttachment(doc(m_doc), wide(name));
+    if (!a)
+        return false;
+    if (!FPDFAttachment_SetFile(a, doc(m_doc), data.constData(),
+                                static_cast<unsigned long>(data.size())))
+        return false;
+    m_modified = true;
+    return true;
+}
+
+QByteArray PdfDocument::attachmentData(int index) const {
+    if (!m_doc || index < 0)
+        return {};
+    FPDF_ATTACHMENT a = FPDFDoc_GetAttachment(doc(m_doc), index);
+    if (!a)
+        return {};
+    unsigned long len = 0;
+    if (!FPDFAttachment_GetFile(a, nullptr, 0, &len) || len == 0)
+        return {};
+    QByteArray out(static_cast<int>(len), '\0');
+    if (!FPDFAttachment_GetFile(a, out.data(), len, &len))
+        return {};
+    out.resize(static_cast<int>(len)); // second call reports what it wrote
+    return out;
+}
+
+bool PdfDocument::removeAttachment(int index) {
+    if (!m_doc || index < 0)
+        return false;
+    if (!FPDFDoc_DeleteAttachment(doc(m_doc), index))
+        return false;
     m_modified = true;
     return true;
 }

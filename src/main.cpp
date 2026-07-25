@@ -945,6 +945,8 @@ private:
         });
         m_extractImgAct = docm->addAction(tr("Extract &Images From Page..."),
                                           [this] { extractPageImages(); });
+        m_attachAct = docm->addAction(tr("Attached &Files..."),
+                                      [this] { manageAttachments(); });
         docm->addSeparator();
         m_flattenAct = docm->addAction(tr("&Flatten Annotations"), [this] {
             if (auto* t = tab(); t && t->doc().flattenAllPages()) {
@@ -1224,6 +1226,90 @@ private:
         }
     }
 
+    // Files carried inside the PDF. Nothing here touches page content, so an
+    // attachment survives edits to the pages and vice versa.
+    void manageAttachments() {
+        auto* t = tab();
+        if (!t)
+            return;
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Attached Files"));
+        dlg.resize(520, 380);
+        auto* col = new QVBoxLayout(&dlg);
+        auto* list = new QListWidget;
+        col->addWidget(list);
+
+        auto refresh = [&] {
+            list->clear();
+            for (const PdfDocument::Attachment& a : t->doc().attachments())
+                list->addItem(tr("%1  (%2 KB)")
+                                  .arg(a.name)
+                                  .arg((a.size + 1023) / 1024));
+            if (list->count() == 0)
+                list->addItem(tr("No files attached to this PDF"));
+        };
+        refresh();
+
+        auto* addBtn = new QPushButton(tr("Attach File..."));
+        auto* saveBtn = new QPushButton(tr("Save As..."));
+        auto* delBtn = new QPushButton(tr("Remove"));
+        auto* row = new QHBoxLayout;
+        row->addWidget(addBtn);
+        row->addWidget(saveBtn);
+        row->addWidget(delBtn);
+        row->addStretch(1);
+        col->addLayout(row);
+
+        // index is only meaningful while the list mirrors the document
+        auto selected = [&] {
+            const int i = list->currentRow();
+            return (i >= 0 && i < t->doc().attachments().size()) ? i : -1;
+        };
+
+        QObject::connect(addBtn, &QPushButton::clicked, &dlg, [&] {
+            const QString path = QFileDialog::getOpenFileName(&dlg, tr("Attach File"));
+            if (path.isEmpty())
+                return;
+            QFile f(path);
+            if (!f.open(QIODevice::ReadOnly)) {
+                QMessageBox::warning(&dlg, theme::kAppName, tr("Cannot read that file."));
+                return;
+            }
+            if (!t->doc().addAttachment(QFileInfo(path).fileName(), f.readAll()))
+                QMessageBox::warning(&dlg, theme::kAppName, tr("Could not attach it."));
+            refresh();
+        });
+        QObject::connect(saveBtn, &QPushButton::clicked, &dlg, [&] {
+            const int i = selected();
+            if (i < 0)
+                return;
+            const QByteArray data = t->doc().attachmentData(i);
+            if (data.isEmpty()) {
+                QMessageBox::warning(&dlg, theme::kAppName, tr("That file is empty."));
+                return;
+            }
+            const QString dest = QFileDialog::getSaveFileName(
+                &dlg, tr("Save Attachment"), t->doc().attachments().at(i).name);
+            if (dest.isEmpty())
+                return;
+            QFile out(dest);
+            if (!out.open(QIODevice::WriteOnly) || out.write(data) != data.size())
+                QMessageBox::warning(&dlg, theme::kAppName, tr("Could not write it."));
+        });
+        QObject::connect(delBtn, &QPushButton::clicked, &dlg, [&] {
+            const int i = selected();
+            if (i >= 0 && t->doc().removeAttachment(i))
+                refresh();
+        });
+
+        auto* close = new QDialogButtonBox(QDialogButtonBox::Close);
+        QObject::connect(close, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        col->addWidget(close);
+        dlg.exec();
+        statusBar()->showMessage(tr("Attachments are stored on Save Copy"));
+        updateUi();
+    }
+
     // Start screen. Recents come from the same QSettings list the File menu
     // already maintains, so there is no second store to keep in sync.
     QWidget* buildStartScreen() {
@@ -1354,6 +1440,7 @@ private:
         entry(m_mergeAct, tr("Combine files"));
         entry(m_splitAct, tr("Split into pages"));
         entry(m_extractImgAct, tr("Extract images"));
+        entry(m_attachAct, tr("Attached files"));
         entry(m_flattenAct, tr("Flatten annotations"));
 
         section(tr("CONVERT"));
@@ -2048,7 +2135,7 @@ private:
               m_copyFileAct, m_copyPathAct, m_revealAct, m_cropAct, m_moveAct,
               m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct,
               m_editTextAct, m_editBoxAct, m_emailAct, m_scanAct, m_boundsAct,
-              m_undoMoveAct, m_redoAct})
+              m_undoMoveAct, m_redoAct, m_attachAct})
             a->setEnabled(loaded);
 #ifdef ANGRA_HAVE_QPDF
         for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
@@ -2111,7 +2198,7 @@ private:
             *m_watermarkAct = nullptr, *m_extractImgAct = nullptr, *m_addTextAct = nullptr,
             *m_signAct = nullptr, *m_editTextAct = nullptr, *m_editBoxAct = nullptr,
             *m_emailAct = nullptr, *m_scanAct = nullptr, *m_boundsAct = nullptr,
-            *m_undoMoveAct = nullptr, *m_redoAct = nullptr;
+            *m_undoMoveAct = nullptr, *m_redoAct = nullptr, *m_attachAct = nullptr;
 #ifdef ANGRA_HAVE_QPDF
     QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
             *m_optimizeAct = nullptr, *m_repairAct = nullptr;

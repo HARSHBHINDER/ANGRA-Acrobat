@@ -379,6 +379,34 @@ int main(int argc, char** argv) {
         CHECK(out.contains(QStringLiteral("quick")));
         CHECK(out.contains(QStringLiteral("lazy")));
     }
+    {
+        MARK("attachments");
+        // Embedded files live in the document, not the pages, so the payload
+        // must come back byte-identical after a save and reopen.
+        PdfDocument a;
+        CHECK(a.load(testPdf) == PdfDocument::Status::Ok);
+        CHECK(a.attachments().isEmpty());
+        const QByteArray payload("angra-attachment-payload\x00\x01\xFE binary", 38);
+        CHECK(a.addAttachment(QStringLiteral("notes.bin"), payload));
+        CHECK(a.isModified());
+        CHECK(a.attachments().size() == 1);
+        CHECK(a.attachments().first().name == QStringLiteral("notes.bin"));
+        CHECK(a.attachments().first().size == payload.size());
+        CHECK(a.attachmentData(0) == payload);
+
+        const QString path = tmp + QStringLiteral("/angra-test-attach.pdf");
+        CHECK(a.saveCopy(path));
+        PdfDocument re;
+        CHECK(re.load(path) == PdfDocument::Status::Ok);
+        CHECK(re.attachments().size() == 1);
+        CHECK(re.attachmentData(0) == payload); // survives the round trip
+        CHECK(re.pageCount() == 2);             // pages untouched
+
+        CHECK(re.removeAttachment(0));
+        CHECK(re.attachments().isEmpty());
+        CHECK(re.attachmentData(0).isEmpty()); // gone, and no crash on reread
+    }
+
     PdfDocument::shutdownLibrary();
     std::puts("ok");
     return 0;

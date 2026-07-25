@@ -172,6 +172,17 @@ public:
                 double width);
     bool addSquare(int pageIndex, const QRectF& rect, const QColor& color);
 
+    // --- embedded files (PDF attachments) ---
+    // Files carried inside the document itself, independent of page content.
+    struct Attachment {
+        QString name;
+        int size = 0; // bytes of the stored file
+    };
+    QList<Attachment> attachments() const;
+    bool addAttachment(const QString& name, const QByteArray& data);
+    QByteArray attachmentData(int index) const;
+    bool removeAttachment(int index);
+
     // Safe save: serialize to memory, validate by reopening, then atomic
     // replace via QSaveFile. Source file is never left half-written.
     bool saveCopy(const QString& destPath, QString* error = nullptr);
