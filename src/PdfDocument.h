@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QColor>
+#include <QPolygonF>
 #include <QImage>
 #include <QList>
 #include <QPointF>
@@ -109,10 +110,19 @@ public:
     struct PageObject {
         int index = -1;
         ObjectKind kind = ObjectKind::Other;
-        QString text;  // Text objects only
-        QRectF bounds; // top-down page points, like searchPage
+        QString text;   // Text objects only
+        QPolygonF quad; // true oriented outline, top-down page points
+        QRectF bounds;  // quad.boundingRect(), for broad-phase tests
     };
     QList<PageObject> pageObjects(int pageIndex) const;
+
+    // Hit test against an already-enumerated list, topmost (highest index)
+    // first, so a click never re-scans the page. An axis-aligned object matches
+    // on bounds plus tolerance, which keeps thin text clickable; a rotated one
+    // must contain the point in its real quad, so a click inside the bounding
+    // box but outside the glyphs misses.
+    static QList<int> objectsAt(const QList<PageObject>& objects,
+                                const QPointF& pagePt, double tolerance = 2.0);
 
     // Translate one object by a page-space delta (dx right, dy down, top-down
     // coordinates). Works for any object kind. Pass the negated delta to undo.

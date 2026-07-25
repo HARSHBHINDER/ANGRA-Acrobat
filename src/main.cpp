@@ -231,6 +231,13 @@ public:
         auto toDevice = [s](const QRectF& r) {
             return QRectF(r.left() * s, r.top() * s, r.width() * s, r.height() * s);
         };
+        auto toDeviceQuad = [s](const QPolygonF& q) {
+            QPolygonF out;
+            out.reserve(q.size());
+            for (const QPointF& pt : q)
+                out << QPointF(pt.x() * s, pt.y() * s);
+            return out;
+        };
         QImage frame = m_baseImage;
         {
             QPainter p(&frame);
@@ -240,22 +247,23 @@ public:
                 for (const QRectF& r : m_searchRects)
                     p.drawRect(toDevice(r));
             }
+            // Quads, not bounding rectangles: a rotated object must outline
+            // what it actually covers.
             if (m_showBounds) {
                 p.setBrush(Qt::NoBrush);
                 p.setPen(QPen(QColor(120, 135, 155), 1.0, Qt::DotLine));
                 for (const PdfDocument::PageObject& o : m_objects)
-                    p.drawRect(toDevice(o.bounds));
+                    p.drawPolygon(toDeviceQuad(o.quad));
             }
             if (m_selected >= 0 && m_selected < m_objects.size()) {
-                const QRectF r = toDevice(m_objects.at(m_selected).bounds);
+                const QPolygonF q = toDeviceQuad(m_objects.at(m_selected).quad);
                 p.setBrush(Qt::NoBrush);
                 p.setPen(QPen(QColor(41, 211, 240), 2.0));
-                p.drawRect(r);
+                p.drawPolygon(q);
                 p.setPen(Qt::NoPen);
                 p.setBrush(QColor(41, 211, 240));
                 constexpr double kHandle = 3.0;
-                for (const QPointF& c :
-                     {r.topLeft(), r.topRight(), r.bottomLeft(), r.bottomRight()})
+                for (const QPointF& c : q) // handles follow the rotated corners
                     p.drawRect(
                         QRectF(c.x() - kHandle, c.y() - kHandle, 2 * kHandle, 2 * kHandle));
             }
@@ -303,10 +311,7 @@ public:
     // Repeated clicks on the same spot cycle through overlapping objects, so a
     // value sitting on top of its underline is still reachable.
     void selectAt(const QPointF& pagePt) {
-        QList<int> hits;
-        for (int i = m_objects.size() - 1; i >= 0; --i) // topmost first
-            if (m_objects.at(i).bounds.adjusted(-2, -2, 2, 2).contains(pagePt))
-                hits << i;
+        const QList<int> hits = PdfDocument::objectsAt(m_objects, pagePt);
         if (hits.isEmpty()) {
             m_selected = -1;
             m_hits.clear();
@@ -330,25 +335,52 @@ public:
     bool moveSelected(double dx, double dy) {
         if (m_selected < 0 || m_selected >= m_objects.size())
             return false;
+        if (dx == 0 && dy == 0)
+            return false; // a zero-distance drag is not an edit
         const int objIndex = m_objects.at(m_selected).index;
         if (!m_doc.moveObject(m_page, objIndex, dx, dy))
             return false;
-        m_undo.append({m_page, objIndex, dx, dy});
+        pushEdit({Edit::Kind::Move, m_page, objIndex, dx, dy, {}, {}});
         render(); // bounds moved, so the display list is stale
         return true;
     }
 
-    bool undoMove() {
+    // Text writes go through here so every one of them lands in history.
+    // repaint=false lets a batch apply many rows and re-render once.
+    bool replaceText(int objIndex, const QString& before, const QString& after,
+                     bool repaint = true) {
+        if (before == after)
+            return false; // an unchanged row is not an edit
+        if (!m_doc.setTextObject(m_page, objIndex, after))
+            return false;
+        pushEdit({Edit::Kind::Text, m_page, objIndex, 0, 0, before, after});
+        if (repaint)
+            render();
+        return true;
+    }
+
+    bool undoEdit() {
         if (m_undo.isEmpty())
             return false;
-        const MoveCmd c = m_undo.takeLast();
-        if (c.page != m_page)
-            gotoPage(c.page);
-        const bool ok = m_doc.moveObject(c.page, c.index, -c.dx, -c.dy);
+        const Edit e = m_undo.takeLast();
+        const bool ok = applyEdit(e, false);
+        m_redo.append(e);
         render();
         return ok;
     }
+
+    bool redoEdit() {
+        if (m_redo.isEmpty())
+            return false;
+        const Edit e = m_redo.takeLast();
+        const bool ok = applyEdit(e, true);
+        m_undo.append(e);
+        render();
+        return ok;
+    }
+
     bool canUndo() const { return !m_undo.isEmpty(); }
+    bool canRedo() const { return !m_redo.isEmpty(); }
 
     // --- search: page-granular; highlights every match on the found page ---
     bool search(const QString& term, int fromPage) {
@@ -608,12 +640,30 @@ private:
     int m_searchPageIdx = -1;
 
     // --- object mode ---
-    struct MoveCmd {
-        int page;
-        int index;
-        double dx;
-        double dy;
+    // Two real command kinds, so one tagged value type rather than a class
+    // hierarchy. Undo applies the inverse, redo re-applies the original.
+    struct Edit {
+        enum class Kind { Move, Text };
+        Kind kind = Kind::Move;
+        int page = 0;
+        int index = -1;
+        double dx = 0, dy = 0; // Move
+        QString before, after; // Text
     };
+
+    bool applyEdit(const Edit& e, bool forward) {
+        if (e.page != m_page)
+            gotoPage(e.page);
+        if (e.kind == Edit::Kind::Move)
+            return m_doc.moveObject(e.page, e.index, forward ? e.dx : -e.dx,
+                                    forward ? e.dy : -e.dy);
+        return m_doc.setTextObject(e.page, e.index, forward ? e.after : e.before);
+    }
+
+    void pushEdit(const Edit& e) {
+        m_undo.append(e);
+        m_redo.clear(); // a new edit after undo abandons the redo branch
+    }
     QImage m_baseImage; // last PDFium render; overlays composite onto a copy
     QList<PdfDocument::PageObject> m_objects;
     QList<int> m_hits; // objects under the last click, topmost first
@@ -621,9 +671,10 @@ private:
     int m_selected = -1;
     bool m_showBounds = false;
     bool m_draggingObject = false;
-    // ponytail: move-only undo by inverse translate. The full command journal
-    // arrives with text and path editing; this covers all that is undoable now.
-    QList<MoveCmd> m_undo;
+    // ponytail: in-memory history only, no autosave journal. Add one if crash
+    // recovery is ever required; nothing else here needs it.
+    QList<Edit> m_undo;
+    QList<Edit> m_redo;
 };
 
 class MainWindow : public QMainWindow {
@@ -822,17 +873,26 @@ private:
                                              "arrow keys to move, Ctrl+Z to undo")
                                        : tr("Object mode off"));
         });
-        m_undoMoveAct = new QAction(tr("&Undo Move"), this);
+        m_undoMoveAct = new QAction(tr("&Undo"), this);
         m_undoMoveAct->setShortcut(QKeySequence::Undo);
         QObject::connect(m_undoMoveAct, &QAction::triggered, this, [this] {
             if (auto* t = tab())
-                statusBar()->showMessage(t->undoMove() ? tr("Move undone")
+                statusBar()->showMessage(t->undoEdit() ? tr("Undone")
                                                        : tr("Nothing to undo"));
+        });
+        m_redoAct = new QAction(tr("&Redo"), this);
+        m_redoAct->setShortcut(QKeySequence::Redo);
+        QObject::connect(m_redoAct, &QAction::triggered, this, [this] {
+            if (auto* t = tab())
+                statusBar()->showMessage(t->redoEdit() ? tr("Redone")
+                                                       : tr("Nothing to redo"));
         });
 
         // View
         QMenu* view = menuBar()->addMenu(tr("&View"));
         view->addAction(m_boundsAct);
+        view->addAction(m_undoMoveAct);
+        view->addAction(m_redoAct);
         view->addSeparator();
         view->addAction(m_zoomInAct);
         view->addAction(m_zoomOutAct);
@@ -1147,7 +1207,8 @@ private:
             const QString edited = table->item(row, 1)->text();
             if (edited == runs.at(row).text)
                 continue;
-            if (t->doc().setTextObject(t->page(), runs.at(row).index, edited))
+            if (t->replaceText(runs.at(row).index, runs.at(row).text, edited,
+                               /*repaint=*/false))
                 ++changed;
         }
         if (changed) {
@@ -1270,7 +1331,8 @@ private:
 
         section(tr("OBJECTS"));
         entry(m_boundsAct, tr("Show boundaries"));
-        entry(m_undoMoveAct, tr("Undo move"));
+        entry(m_undoMoveAct, tr("Undo"));
+        entry(m_redoAct, tr("Redo"));
 
         section(tr("EDIT TEXT"));
         entry(m_scanAct, tr("Scan text on page"));
@@ -1615,8 +1677,7 @@ private:
 
         const QString edited = textEdit->text();
         if (edited.isEmpty()) { // delete
-            if (t->doc().setTextObject(t->page(), idx, {}))
-                t->render();
+            t->replaceText(idx, current, {}); // routed for undo
             return;
         }
         // Unstyled edit (same font, black, no marks) -> cheap in-place path.
@@ -1982,7 +2043,7 @@ private:
               m_copyFileAct, m_copyPathAct, m_revealAct, m_cropAct, m_moveAct,
               m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct,
               m_editTextAct, m_editBoxAct, m_emailAct, m_scanAct, m_boundsAct,
-              m_undoMoveAct})
+              m_undoMoveAct, m_redoAct})
             a->setEnabled(loaded);
 #ifdef ANGRA_HAVE_QPDF
         for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
@@ -1997,6 +2058,7 @@ private:
             m_highlightAct->setEnabled(!t->selectionRects().isEmpty());
             m_squareAct->setEnabled(!t->selectionRects().isEmpty());
             m_undoMoveAct->setEnabled(t->canUndo());
+            m_redoAct->setEnabled(t->canRedo());
             // Blocked: setChecked would fire toggled -> setShowBounds -> repaint
             // -> updateUi, bouncing back through here on every tab switch.
             {
@@ -2044,7 +2106,7 @@ private:
             *m_watermarkAct = nullptr, *m_extractImgAct = nullptr, *m_addTextAct = nullptr,
             *m_signAct = nullptr, *m_editTextAct = nullptr, *m_editBoxAct = nullptr,
             *m_emailAct = nullptr, *m_scanAct = nullptr, *m_boundsAct = nullptr,
-            *m_undoMoveAct = nullptr;
+            *m_undoMoveAct = nullptr, *m_redoAct = nullptr;
 #ifdef ANGRA_HAVE_QPDF
     QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
             *m_optimizeAct = nullptr, *m_repairAct = nullptr;

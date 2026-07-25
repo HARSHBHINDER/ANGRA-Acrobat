@@ -620,6 +620,53 @@ QString PdfDocument::textObjectAt(int pageIndex, const QPointF& pagePt, int* obj
     return {};
 }
 
+// Oriented outline in top-down page points. PDFium reports the rotated bounds
+// directly; the axis-aligned bounds are the fallback when it cannot, which is
+// also the correct answer for anything unrotated.
+static QPolygonF objectQuad(FPDF_PAGEOBJECT obj, double pageHeight) {
+    FS_QUADPOINTSF q{};
+    if (FPDFPageObj_GetRotatedBounds(obj, &q))
+        return QPolygonF({QPointF(q.x1, pageHeight - q.y1),
+                          QPointF(q.x2, pageHeight - q.y2),
+                          QPointF(q.x3, pageHeight - q.y3),
+                          QPointF(q.x4, pageHeight - q.y4)});
+    float l, b, r, t;
+    if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
+        return {};
+    return QPolygonF({QPointF(l, pageHeight - b), QPointF(r, pageHeight - b),
+                      QPointF(r, pageHeight - t), QPointF(l, pageHeight - t)});
+}
+
+// A quad whose every edge runs along an axis needs no polygon test - its
+// bounds are exact, and testing bounds keeps the click tolerance that makes
+// thin text selectable.
+static bool quadIsAxisAligned(const QPolygonF& quad) {
+    if (quad.size() != 4)
+        return true;
+    for (int i = 0; i < 4; ++i) {
+        const QPointF edge = quad.at((i + 1) % 4) - quad.at(i);
+        if (qAbs(edge.x()) > 0.01 && qAbs(edge.y()) > 0.01)
+            return false;
+    }
+    return true;
+}
+
+QList<int> PdfDocument::objectsAt(const QList<PageObject>& objects,
+                                  const QPointF& pagePt, double tolerance) {
+    QList<int> hits;
+    for (int i = objects.size() - 1; i >= 0; --i) { // reverse paint order
+        const PageObject& o = objects.at(i);
+        if (!o.bounds.adjusted(-tolerance, -tolerance, tolerance, tolerance)
+                 .contains(pagePt))
+            continue; // broad phase
+        if (!quadIsAxisAligned(o.quad) &&
+            !o.quad.containsPoint(pagePt, Qt::OddEvenFill))
+            continue; // narrow phase, rotated objects only
+        hits << i;
+    }
+    return hits;
+}
+
 QList<PdfDocument::PageObject> PdfDocument::pageObjects(int pageIndex) const {
     QList<PageObject> objects;
     if (!m_doc)
@@ -635,12 +682,13 @@ QList<PdfDocument::PageObject> PdfDocument::pageObjects(int pageIndex) const {
         FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, i);
         if (!obj)
             continue;
-        float l, b, r, t;
-        if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
+        const QPolygonF quad = objectQuad(obj, h);
+        if (quad.isEmpty())
             continue; // no geometry means nothing to draw a boundary around
         PageObject po;
         po.index = i; // page-object index doubles as z-order
-        po.bounds = QRectF(l, h - t, r - l, t - b);
+        po.quad = quad;
+        po.bounds = quad.boundingRect();
         switch (FPDFPageObj_GetType(obj)) {
         case FPDF_PAGEOBJ_TEXT:
             po.kind = ObjectKind::Text;

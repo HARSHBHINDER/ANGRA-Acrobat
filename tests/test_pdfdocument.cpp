@@ -187,6 +187,50 @@ int main(int argc, char** argv) {
         CHECK(!re.pageText(0).contains(QStringLiteral("editme")));
         (void)pts;
 
+        MARK("quad-hit-test");
+        // objectsAt is a pure function over an enumerated list, so the rotated
+        // cases are built by hand rather than needing a rotated fixture.
+        {
+            auto rect = [](double x, double y, double w, double h) {
+                return QPolygonF({QPointF(x, y), QPointF(x + w, y),
+                                  QPointF(x + w, y + h), QPointF(x, y + h)});
+            };
+            PdfDocument::PageObject flat;
+            flat.index = 0;
+            flat.kind = PdfDocument::ObjectKind::Text;
+            flat.quad = rect(100, 100, 80, 20);
+            flat.bounds = flat.quad.boundingRect();
+
+            // a diamond: its bounding-box corners sit well outside the shape
+            PdfDocument::PageObject turned;
+            turned.index = 1;
+            turned.kind = PdfDocument::ObjectKind::Path;
+            turned.quad = QPolygonF({QPointF(300, 200), QPointF(340, 240),
+                                     QPointF(300, 280), QPointF(260, 240)});
+            turned.bounds = turned.quad.boundingRect();
+
+            const QList<PdfDocument::PageObject> objs{flat, turned};
+            // 1. unrotated hit
+            CHECK(PdfDocument::objectsAt(objs, QPointF(140, 110)).contains(0));
+            // 2. unrotated miss
+            CHECK(PdfDocument::objectsAt(objs, QPointF(140, 400)).isEmpty());
+            // 3. rotated hit, inside the real quad
+            CHECK(PdfDocument::objectsAt(objs, QPointF(300, 240)).contains(1));
+            // 4. inside the rotated AABB but outside the quad: must miss
+            CHECK(turned.bounds.contains(QPointF(263, 203))); // a box corner
+            CHECK(!PdfDocument::objectsAt(objs, QPointF(263, 203)).contains(1));
+            // 6. click tolerance still applies to axis-aligned objects, which
+            //    is what keeps thin text selectable
+            CHECK(PdfDocument::objectsAt(objs, QPointF(140, 99)).contains(0));
+            // topmost first: later list position paints on top
+            PdfDocument::PageObject over = flat;
+            over.index = 2;
+            const QList<int> stacked =
+                PdfDocument::objectsAt({flat, over}, QPointF(140, 110));
+            CHECK(stacked.size() == 2);
+            CHECK(stacked.first() == 1);
+        }
+
         MARK("display-list-move-undo");
         // Render -> detect -> select -> move -> undo -> save, and confirm the
         // objects that were not touched did not shift.
@@ -195,6 +239,13 @@ int main(int argc, char** argv) {
             CHECK(d2.load(testPdf) == PdfDocument::Status::Ok);
             const QList<PdfDocument::PageObject> before = d2.pageObjects(0);
             CHECK(!before.isEmpty());
+            // every enumerated object carries a real quad whose bounding box
+            // is the bounds field the rest of the code uses
+            for (const PdfDocument::PageObject& o : before) {
+                CHECK(o.quad.size() == 4);
+                CHECK(qAbs(o.quad.boundingRect().left() - o.bounds.left()) < 0.01);
+                CHECK(qAbs(o.quad.boundingRect().top() - o.bounds.top()) < 0.01);
+            }
             int textIdx = -1;
             for (int i = 0; i < before.size(); ++i)
                 if (before.at(i).kind == PdfDocument::ObjectKind::Text) {
