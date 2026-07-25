@@ -763,11 +763,45 @@ bool PdfDocument::setTextObject(int pageIndex, int objIndex, const QString& text
             return false;
         FPDFPageObj_Destroy(obj);
     } else if (!FPDFText_SetText(obj, wide(text))) {
-        return false;
+        // The run's font is normally a subset carrying only the glyphs the
+        // document already used, and PDFium cannot expand a subset. Failing
+        // here is what made editing look dead: the call returned false and
+        // nothing changed on screen. Rebuild the run with a base-14 face at
+        // the same matrix, size and colour, and flag the substitution so the
+        // caller can say so rather than swapping fonts behind the user's back.
+        FS_MATRIX m{1, 0, 0, 1, 0, 0};
+        FPDFPageObj_GetMatrix(obj, &m); // full matrix keeps any rotation
+        float size = 12;
+        FPDFTextObj_GetFontSize(obj, &size);
+        unsigned int r = 0, g = 0, b = 0, a = 255;
+        FPDFPageObj_GetFillColor(obj, &r, &g, &b, &a);
+
+        FPDF_PAGEOBJECT repl = FPDFPageObj_NewTextObj(doc(m_doc), "Helvetica", size);
+        if (!repl)
+            return false;
+        if (!FPDFText_SetText(repl, wide(text))) {
+            FPDFPageObj_Destroy(repl); // base-14 could not encode it either
+            return false;
+        }
+        FPDFPageObj_SetFillColor(repl, r, g, b, a);
+        FPDFPageObj_SetMatrix(repl, &m);
+        if (!FPDFPage_RemoveObject(page.p, obj)) {
+            FPDFPageObj_Destroy(repl);
+            return false;
+        }
+        FPDFPageObj_Destroy(obj);
+        FPDFPage_InsertObject(page.p, repl);
+        m_fontSubstituted = true;
     }
     FPDFPage_GenerateContent(page.p);
     m_modified = true;
     return true;
+}
+
+bool PdfDocument::takeFontSubstituted() {
+    const bool was = m_fontSubstituted;
+    m_fontSubstituted = false;
+    return was;
 }
 
 // Map family + bold/italic to a PDF base-14 font name.

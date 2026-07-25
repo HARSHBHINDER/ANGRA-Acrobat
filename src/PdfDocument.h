@@ -88,6 +88,11 @@ public:
     QString textObjectAt(int pageIndex, const QPointF& pagePt, int* objIndex) const;
     bool setTextObject(int pageIndex, int objIndex, const QString& text);
 
+    // True when the last text write could not encode through the run's own
+    // font and rebuilt it with a base-14 face instead. Reading clears it, so
+    // the caller warns once per edit rather than substituting silently.
+    bool takeFontSubstituted();
+
     // Every text run on a page, in draw order, for the text scanner: lets the
     // user pick a run from a list instead of clicking a 10pt glyph box.
     // Whitespace-only runs are skipped. rect is top-down points like searchPage.
@@ -186,5 +191,6 @@ private:
     QByteArray m_data; // backing buffer; must outlive m_doc
     QString m_path;
     QByteArray m_password; // kept so saveCopy can validate its own output
+    mutable bool m_fontSubstituted = false;
     bool m_modified = false;
 };

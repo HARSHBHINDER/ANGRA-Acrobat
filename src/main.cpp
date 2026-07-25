@@ -1213,7 +1213,12 @@ private:
         }
         if (changed) {
             t->render();
-            statusBar()->showMessage(tr("Updated %1 text run(s)").arg(changed));
+            statusBar()->showMessage(
+                t->doc().takeFontSubstituted()
+                    ? tr("Updated %1 text run(s). Some used Helvetica: the original "
+                         "embedded font could not encode the new characters.")
+                          .arg(changed)
+                    : tr("Updated %1 text run(s)").arg(changed));
         } else {
             statusBar()->showMessage(tr("No changes applied"));
         }

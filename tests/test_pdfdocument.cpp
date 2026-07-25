@@ -312,7 +312,11 @@ int main(int argc, char** argv) {
             }
             // rewrite the last run, delete the first: descending index order
             const int last = runs.size() - 1;
+            CHECK(!s.takeFontSubstituted()); // nothing written yet
             CHECK(s.setTextObject(0, runs.at(last).index, QStringLiteral("omega")));
+            // addTextPage uses a base-14 font, so this must encode directly
+            // and report no substitution; the flag also clears on read.
+            CHECK(!s.takeFontSubstituted());
             CHECK(s.setTextObject(0, runs.at(0).index, {})); // empty == delete
             const QString scanPath = tmp + QStringLiteral("/angra-test-scan.pdf");
             CHECK(s.saveCopy(scanPath));
