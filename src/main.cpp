@@ -44,8 +44,11 @@
 #include <QScrollArea>
 #include <QSettings>
 #include <QSpinBox>
+#include <QAbstractButton>
+#include <QHeaderView>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QTableWidget>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTabWidget>
@@ -738,6 +741,9 @@ private:
                     t->render();
             }
         });
+        m_scanAct = comment->addAction(tr("&Scan Text On Page..."),
+                                       QKeySequence(Qt::CTRL | Qt::Key_T),
+                                       [this] { scanTextRuns(); });
         m_editTextAct = comment->addAction(tr("&Edit Text At Last Click..."),
                                            [this] { editTextAtClick(); });
         m_editBoxAct = comment->addAction(tr("Edit Text &Box (reflow selection)..."),
@@ -858,6 +864,110 @@ private:
         buildToolPanel(view); // last: the rail reuses every action created above
     }
 
+    // Text scanner: every run on the page in one editable list. This is the
+    // discoverable path to text editing - clicking a 10pt glyph box to find a
+    // run is a pixel hunt, and a miss looks like the feature is dead.
+    void scanTextRuns() {
+        auto* t = tab();
+        if (!t)
+            return;
+        const QList<PdfDocument::TextRun> runs = t->doc().textRuns(t->page());
+        if (runs.isEmpty()) {
+            QMessageBox::information(
+                this, tr("Scan Text"),
+                tr("No editable text runs on page %1.\n\nA scanned page holds a "
+                   "picture of text rather than text objects. Reading those needs "
+                   "OCR, which this build does not do.")
+                    .arg(t->page() + 1));
+            return;
+        }
+
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Scan Text - page %1, %2 runs")
+                               .arg(t->page() + 1)
+                               .arg(runs.size()));
+        dlg.resize(760, 540);
+        auto* col = new QVBoxLayout(&dlg);
+
+        auto* table = new QTableWidget(runs.size(), 2, &dlg);
+        table->setHorizontalHeaderLabels({tr("Text on page"), tr("Replace with")});
+        table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        table->verticalHeader()->setVisible(false);
+        for (int row = 0; row < runs.size(); ++row) {
+            auto* found = new QTableWidgetItem(runs.at(row).text);
+            found->setFlags(Qt::ItemIsEnabled); // reference column, not editable
+            table->setItem(row, 0, found);
+            table->setItem(row, 1, new QTableWidgetItem(runs.at(row).text));
+        }
+        col->addWidget(table);
+
+        auto* findEdit = new QLineEdit;
+        findEdit->setPlaceholderText(tr("Find across every run"));
+        auto* replEdit = new QLineEdit;
+        replEdit->setPlaceholderText(tr("Replace with"));
+        auto* batchBtn = new QPushButton(tr("Replace All"));
+        auto* batchRow = new QHBoxLayout;
+        batchRow->addWidget(findEdit);
+        batchRow->addWidget(replEdit);
+        batchRow->addWidget(batchBtn);
+        col->addLayout(batchRow);
+
+        auto* status = new QLabel(tr("Edit any row, or use Find/Replace All. "
+                                     "Clearing a row deletes that run."));
+        col->addWidget(status);
+
+        // Batch only stages text in the table; nothing touches the PDF until
+        // Apply, so a bad replace is undone by cancelling the dialog.
+        QObject::connect(batchBtn, &QPushButton::clicked, &dlg, [&] {
+            const QString from = findEdit->text();
+            if (from.isEmpty())
+                return;
+            int hits = 0;
+            for (int row = 0; row < table->rowCount(); ++row) {
+                const QString before = table->item(row, 1)->text();
+                QString after = before;
+                after.replace(from, replEdit->text());
+                if (after != before) {
+                    table->item(row, 1)->setText(after);
+                    ++hits;
+                }
+            }
+            status->setText(tr("Staged in %1 row(s). Apply to write them.").arg(hits));
+        });
+
+        auto* buttons =
+            new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Cancel);
+        buttons->button(QDialogButtonBox::Apply)->setText(tr("Apply to PDF"));
+        QObject::connect(buttons, &QDialogButtonBox::clicked, &dlg,
+                         [&](QAbstractButton* b) {
+                             if (buttons->standardButton(b) == QDialogButtonBox::Apply)
+                                 dlg.accept();
+                             else
+                                 dlg.reject();
+                         });
+        col->addWidget(buttons);
+
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+
+        // Highest index first: clearing a run deletes the page object, which
+        // shifts every later index down and would corrupt the remaining edits.
+        int changed = 0;
+        for (int row = runs.size() - 1; row >= 0; --row) {
+            const QString edited = table->item(row, 1)->text();
+            if (edited == runs.at(row).text)
+                continue;
+            if (t->doc().setTextObject(t->page(), runs.at(row).index, edited))
+                ++changed;
+        }
+        if (changed) {
+            t->render();
+            statusBar()->showMessage(tr("Updated %1 text run(s)").arg(changed));
+        } else {
+            statusBar()->showMessage(tr("No changes applied"));
+        }
+    }
+
     // Start screen. Recents come from the same QSettings list the File menu
     // already maintains, so there is no second store to keep in sync.
     QWidget* buildStartScreen() {
@@ -969,6 +1079,7 @@ private:
         entry(m_watermarkAct, tr("Watermark"));
 
         section(tr("EDIT TEXT"));
+        entry(m_scanAct, tr("Scan text on page"));
         entry(m_editTextAct, tr("Edit text at click"));
         entry(m_editBoxAct, tr("Reflow text box"));
 
@@ -1676,7 +1787,7 @@ private:
               m_toImagesAct, m_toJpgAct, m_toTextAct, m_copyAct, m_redactAct, m_compareAct,
               m_copyFileAct, m_copyPathAct, m_revealAct, m_cropAct, m_moveAct,
               m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct,
-              m_editTextAct, m_editBoxAct, m_emailAct})
+              m_editTextAct, m_editBoxAct, m_emailAct, m_scanAct})
             a->setEnabled(loaded);
 #ifdef ANGRA_HAVE_QPDF
         for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
@@ -1727,7 +1838,7 @@ private:
             *m_cropAct = nullptr, *m_moveAct = nullptr, *m_pageNumAct = nullptr,
             *m_watermarkAct = nullptr, *m_extractImgAct = nullptr, *m_addTextAct = nullptr,
             *m_signAct = nullptr, *m_editTextAct = nullptr, *m_editBoxAct = nullptr,
-            *m_emailAct = nullptr;
+            *m_emailAct = nullptr, *m_scanAct = nullptr;
 #ifdef ANGRA_HAVE_QPDF
     QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
             *m_optimizeAct = nullptr, *m_repairAct = nullptr;

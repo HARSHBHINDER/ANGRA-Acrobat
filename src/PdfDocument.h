@@ -87,6 +87,18 @@ public:
     QString textObjectAt(int pageIndex, const QPointF& pagePt, int* objIndex) const;
     bool setTextObject(int pageIndex, int objIndex, const QString& text);
 
+    // Every text run on a page, in draw order, for the text scanner: lets the
+    // user pick a run from a list instead of clicking a 10pt glyph box.
+    // Whitespace-only runs are skipped. rect is top-down points like searchPage.
+    // Apply edits highest index first - emptying a run deletes the object and
+    // shifts every later index down.
+    struct TextRun {
+        int index = -1; // page-object index, valid for setTextObject
+        QString text;
+        QRectF rect;
+    };
+    QList<TextRun> textRuns(int pageIndex) const;
+
     // Styled replace: swap the run at objIndex for a new text object with the
     // chosen family/size/style/color at the same position. family is one of
     // "Helvetica","Times","Courier"; ttf (optional) embeds a custom TrueType

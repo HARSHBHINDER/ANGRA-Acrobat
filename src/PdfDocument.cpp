@@ -620,6 +620,38 @@ QString PdfDocument::textObjectAt(int pageIndex, const QPointF& pagePt, int* obj
     return {};
 }
 
+QList<PdfDocument::TextRun> PdfDocument::textRuns(int pageIndex) const {
+    QList<TextRun> runs;
+    if (!m_doc)
+        return runs;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return runs;
+    TextPage tp(page.p);
+    if (!tp)
+        return runs;
+    const double h = FPDF_GetPageHeightF(page.p);
+    const int count = FPDFPage_CountObjects(page.p);
+    for (int i = 0; i < count; ++i) {
+        FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, i);
+        if (FPDFPageObj_GetType(obj) != FPDF_PAGEOBJ_TEXT)
+            continue;
+        const unsigned long bytes = FPDFTextObj_GetText(obj, tp.t, nullptr, 0);
+        if (bytes < 2)
+            continue;
+        QVarLengthArray<unsigned short, 256> buf(bytes / 2);
+        FPDFTextObj_GetText(obj, tp.t, buf.data(), bytes);
+        const QString text = fromUtf16Buffer(buf, bytes);
+        if (text.trimmed().isEmpty())
+            continue; // spacing runs would just pad the list
+        float l, b, r, t;
+        if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
+            continue;
+        runs.append({i, text, QRectF(l, h - t, r - l, t - b)});
+    }
+    return runs;
+}
+
 bool PdfDocument::setTextObject(int pageIndex, int objIndex, const QString& text) {
     if (!m_doc || objIndex < 0)
         return false;

@@ -187,6 +187,37 @@ int main(int argc, char** argv) {
         CHECK(!re.pageText(0).contains(QStringLiteral("editme")));
         (void)pts;
 
+        MARK("scan-text-runs");
+        // Scanner: enumerate runs, then apply highest index first. The order
+        // matters - an emptied run is deleted, which shifts every later
+        // page-object index down.
+        {
+            PdfDocument s;
+            CHECK(s.createEmpty());
+            CHECK(s.addTextPage({QStringLiteral("alpha one"),
+                                 QStringLiteral("beta two"),
+                                 QStringLiteral("gamma three")}));
+            const QList<PdfDocument::TextRun> runs = s.textRuns(0);
+            CHECK(runs.size() >= 3);
+            for (const PdfDocument::TextRun& r : runs) {
+                CHECK(r.index >= 0);
+                CHECK(!r.text.trimmed().isEmpty()); // whitespace runs are skipped
+                CHECK(r.rect.width() > 0 && r.rect.height() > 0);
+            }
+            // rewrite the last run, delete the first: descending index order
+            const int last = runs.size() - 1;
+            CHECK(s.setTextObject(0, runs.at(last).index, QStringLiteral("omega")));
+            CHECK(s.setTextObject(0, runs.at(0).index, {})); // empty == delete
+            const QString scanPath = tmp + QStringLiteral("/angra-test-scan.pdf");
+            CHECK(s.saveCopy(scanPath));
+            PdfDocument sr;
+            CHECK(sr.load(scanPath) == PdfDocument::Status::Ok);
+            const QString after = sr.pageText(0);
+            CHECK(after.contains(QStringLiteral("omega")));
+            CHECK(!after.contains(QStringLiteral("alpha"))); // first run deleted
+            CHECK(sr.textRuns(0).size() == runs.size() - 1);
+        }
+
         MARK("styled-replace");
         // styled replace: bold Times, underlined, survives save/reload
         int idx2 = -1;
