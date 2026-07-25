@@ -187,6 +187,61 @@ int main(int argc, char** argv) {
         CHECK(!re.pageText(0).contains(QStringLiteral("editme")));
         (void)pts;
 
+        MARK("display-list-move-undo");
+        // Render -> detect -> select -> move -> undo -> save, and confirm the
+        // objects that were not touched did not shift.
+        {
+            PdfDocument d2;
+            CHECK(d2.load(testPdf) == PdfDocument::Status::Ok);
+            const QList<PdfDocument::PageObject> before = d2.pageObjects(0);
+            CHECK(!before.isEmpty());
+            int textIdx = -1;
+            for (int i = 0; i < before.size(); ++i)
+                if (before.at(i).kind == PdfDocument::ObjectKind::Text) {
+                    textIdx = i;
+                    break;
+                }
+            CHECK(textIdx >= 0);
+            // z-order is the page-object index, so it must be strictly ascending
+            for (int i = 1; i < before.size(); ++i)
+                CHECK(before.at(i).index > before.at(i - 1).index);
+
+            const QRectF origin = before.at(textIdx).bounds;
+            constexpr double kDx = 12.0, kDy = 7.0;
+            CHECK(d2.moveObject(0, before.at(textIdx).index, kDx, kDy));
+            CHECK(d2.isModified());
+            const QList<PdfDocument::PageObject> moved = d2.pageObjects(0);
+            CHECK(moved.size() == before.size()); // moving creates nothing
+            const QRectF shifted = moved.at(textIdx).bounds;
+            CHECK(qAbs(shifted.left() - (origin.left() + kDx)) < 0.6);
+            CHECK(qAbs(shifted.top() - (origin.top() + kDy)) < 0.6); // dy is downward
+            CHECK(qAbs(shifted.width() - origin.width()) < 0.6);     // translate only
+
+            // every other object stayed exactly where it was
+            for (int i = 0; i < before.size(); ++i) {
+                if (i == textIdx)
+                    continue;
+                CHECK(qAbs(moved.at(i).bounds.left() - before.at(i).bounds.left()) < 0.01);
+                CHECK(qAbs(moved.at(i).bounds.top() - before.at(i).bounds.top()) < 0.01);
+            }
+
+            // undo is the negated delta
+            CHECK(d2.moveObject(0, before.at(textIdx).index, -kDx, -kDy));
+            const QRectF back = d2.pageObjects(0).at(textIdx).bounds;
+            CHECK(qAbs(back.left() - origin.left()) < 0.6);
+            CHECK(qAbs(back.top() - origin.top()) < 0.6);
+
+            // move again, then verify it survives save + reopen
+            CHECK(d2.moveObject(0, before.at(textIdx).index, kDx, kDy));
+            const QString movePath = tmp + QStringLiteral("/angra-test-move.pdf");
+            CHECK(d2.saveCopy(movePath));
+            PdfDocument mr;
+            CHECK(mr.load(movePath) == PdfDocument::Status::Ok);
+            const QList<PdfDocument::PageObject> reopened = mr.pageObjects(0);
+            CHECK(reopened.size() == before.size());
+            CHECK(qAbs(reopened.at(textIdx).bounds.left() - (origin.left() + kDx)) < 0.6);
+        }
+
         MARK("scan-text-runs");
         // Scanner: enumerate runs, then apply highest index first. The order
         // matters - an emptied run is deleted, which shifts every later

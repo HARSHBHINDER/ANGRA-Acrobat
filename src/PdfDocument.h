@@ -99,6 +99,25 @@ public:
     };
     QList<TextRun> textRuns(int pageIndex) const;
 
+    // --- display list ---
+    // Every object painted on a page, in paint order. The page-object index is
+    // also the z-order: a later index paints on top. The source reference is
+    // (pageIndex, index) - PDFium's public API exposes no indirect object
+    // number or operator offset, so that pair is as specific as it gets. See
+    // docs/ADR-001-pdf-engine.md.
+    enum class ObjectKind { Text, Path, Image, Form, Shading, Other };
+    struct PageObject {
+        int index = -1;
+        ObjectKind kind = ObjectKind::Other;
+        QString text;  // Text objects only
+        QRectF bounds; // top-down page points, like searchPage
+    };
+    QList<PageObject> pageObjects(int pageIndex) const;
+
+    // Translate one object by a page-space delta (dx right, dy down, top-down
+    // coordinates). Works for any object kind. Pass the negated delta to undo.
+    bool moveObject(int pageIndex, int objIndex, double dx, double dy);
+
     // Styled replace: swap the run at objIndex for a new text object with the
     // chosen family/size/style/color at the same position. family is one of
     // "Helvetica","Times","Courier"; ttf (optional) embeds a custom TrueType

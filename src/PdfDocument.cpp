@@ -620,36 +620,85 @@ QString PdfDocument::textObjectAt(int pageIndex, const QPointF& pagePt, int* obj
     return {};
 }
 
-QList<PdfDocument::TextRun> PdfDocument::textRuns(int pageIndex) const {
-    QList<TextRun> runs;
+QList<PdfDocument::PageObject> PdfDocument::pageObjects(int pageIndex) const {
+    QList<PageObject> objects;
     if (!m_doc)
-        return runs;
+        return objects;
     Page page(m_doc, pageIndex);
     if (!page)
-        return runs;
-    TextPage tp(page.p);
-    if (!tp)
-        return runs;
+        return objects;
+    TextPage tp(page.p); // may fail; text stays empty, geometry still works
     const double h = FPDF_GetPageHeightF(page.p);
     const int count = FPDFPage_CountObjects(page.p);
+    objects.reserve(count);
     for (int i = 0; i < count; ++i) {
         FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, i);
-        if (FPDFPageObj_GetType(obj) != FPDF_PAGEOBJ_TEXT)
+        if (!obj)
             continue;
-        const unsigned long bytes = FPDFTextObj_GetText(obj, tp.t, nullptr, 0);
-        if (bytes < 2)
-            continue;
-        QVarLengthArray<unsigned short, 256> buf(bytes / 2);
-        FPDFTextObj_GetText(obj, tp.t, buf.data(), bytes);
-        const QString text = fromUtf16Buffer(buf, bytes);
-        if (text.trimmed().isEmpty())
-            continue; // spacing runs would just pad the list
         float l, b, r, t;
         if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
-            continue;
-        runs.append({i, text, QRectF(l, h - t, r - l, t - b)});
+            continue; // no geometry means nothing to draw a boundary around
+        PageObject po;
+        po.index = i; // page-object index doubles as z-order
+        po.bounds = QRectF(l, h - t, r - l, t - b);
+        switch (FPDFPageObj_GetType(obj)) {
+        case FPDF_PAGEOBJ_TEXT:
+            po.kind = ObjectKind::Text;
+            if (tp) {
+                const unsigned long bytes = FPDFTextObj_GetText(obj, tp.t, nullptr, 0);
+                if (bytes >= 2) {
+                    QVarLengthArray<unsigned short, 256> buf(bytes / 2);
+                    FPDFTextObj_GetText(obj, tp.t, buf.data(), bytes);
+                    po.text = fromUtf16Buffer(buf, bytes);
+                }
+            }
+            break;
+        case FPDF_PAGEOBJ_PATH:
+            po.kind = ObjectKind::Path;
+            break;
+        case FPDF_PAGEOBJ_IMAGE:
+            po.kind = ObjectKind::Image;
+            break;
+        case FPDF_PAGEOBJ_FORM:
+            po.kind = ObjectKind::Form;
+            break;
+        case FPDF_PAGEOBJ_SHADING:
+            po.kind = ObjectKind::Shading;
+            break;
+        default:
+            po.kind = ObjectKind::Other;
+            break;
+        }
+        objects.append(po);
+    }
+    return objects;
+}
+
+QList<PdfDocument::TextRun> PdfDocument::textRuns(int pageIndex) const {
+    QList<TextRun> runs;
+    for (const PageObject& o : pageObjects(pageIndex)) {
+        if (o.kind != ObjectKind::Text || o.text.trimmed().isEmpty())
+            continue; // spacing-only runs would just pad the scanner list
+        runs.append({o.index, o.text, o.bounds});
     }
     return runs;
+}
+
+bool PdfDocument::moveObject(int pageIndex, int objIndex, double dx, double dy) {
+    if (!m_doc || objIndex < 0)
+        return false;
+    Page page(m_doc, pageIndex);
+    if (!page)
+        return false;
+    FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, objIndex);
+    if (!obj)
+        return false;
+    // Page space is bottom-up, so a downward screen delta is a negative y.
+    FPDFPageObj_Transform(obj, 1, 0, 0, 1, dx, -dy);
+    if (!FPDFPage_GenerateContent(page.p))
+        return false;
+    m_modified = true;
+    return true;
 }
 
 bool PdfDocument::setTextObject(int pageIndex, int objIndex, const QString& text) {

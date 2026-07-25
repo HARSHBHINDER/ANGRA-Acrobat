@@ -4,7 +4,9 @@
 #include "PdfProtect.h"
 #endif
 
+#include <QAction>
 #include <QActionGroup>
+#include <QSignalBlocker>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -205,26 +207,148 @@ public:
         if (!m_doc.isLoaded())
             return;
         const qreal dpr = devicePixelRatioF();
-        QImage image = m_doc.renderPage(m_page, m_zoom * dpr);
-        if (image.isNull()) {
+        m_baseImage = m_doc.renderPage(m_page, m_zoom * dpr);
+        if (m_baseImage.isNull()) {
             m_canvas->setText(tr("Failed to render page %1.").arg(m_page + 1));
             m_canvas->adjustSize();
             changed();
             return;
         }
-        if (m_searchPageIdx == m_page && !m_searchRects.isEmpty()) {
-            QPainter p(&image);
-            p.setPen(Qt::NoPen);
-            p.setBrush(QColor(255, 235, 59, 110));
-            const double s = m_zoom * dpr;
-            for (const QRectF& r : m_searchRects)
-                p.drawRect(QRectF(r.left() * s, r.top() * s, r.width() * s, r.height() * s));
+        m_objects = m_doc.pageObjects(m_page); // detect objects
+        if (m_selected >= m_objects.size())
+            m_selected = -1;
+        paintOverlay();
+    }
+
+    // Overlay is composited onto a copy of the cached render, so selecting or
+    // dragging never re-runs PDFium. Screen pixels only: nothing drawn here is
+    // written into a content stream, so overlays cannot print.
+    void paintOverlay() {
+        if (m_baseImage.isNull())
+            return;
+        const qreal dpr = devicePixelRatioF();
+        const double s = m_zoom * dpr;
+        auto toDevice = [s](const QRectF& r) {
+            return QRectF(r.left() * s, r.top() * s, r.width() * s, r.height() * s);
+        };
+        QImage frame = m_baseImage;
+        {
+            QPainter p(&frame);
+            if (m_searchPageIdx == m_page && !m_searchRects.isEmpty()) {
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(255, 235, 59, 110));
+                for (const QRectF& r : m_searchRects)
+                    p.drawRect(toDevice(r));
+            }
+            if (m_showBounds) {
+                p.setBrush(Qt::NoBrush);
+                p.setPen(QPen(QColor(120, 135, 155), 1.0, Qt::DotLine));
+                for (const PdfDocument::PageObject& o : m_objects)
+                    p.drawRect(toDevice(o.bounds));
+            }
+            if (m_selected >= 0 && m_selected < m_objects.size()) {
+                const QRectF r = toDevice(m_objects.at(m_selected).bounds);
+                p.setBrush(Qt::NoBrush);
+                p.setPen(QPen(QColor(41, 211, 240), 2.0));
+                p.drawRect(r);
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(41, 211, 240));
+                constexpr double kHandle = 3.0;
+                for (const QPointF& c :
+                     {r.topLeft(), r.topRight(), r.bottomLeft(), r.bottomRight()})
+                    p.drawRect(
+                        QRectF(c.x() - kHandle, c.y() - kHandle, 2 * kHandle, 2 * kHandle));
+            }
         }
-        image.setDevicePixelRatio(dpr);
-        m_canvas->setPixmap(QPixmap::fromImage(std::move(image)));
+        frame.setDevicePixelRatio(dpr);
+        m_canvas->setPixmap(QPixmap::fromImage(std::move(frame)));
         m_canvas->adjustSize();
         changed();
     }
+
+    // --- object mode: boundaries, selection, movement, undo ---
+    bool showBounds() const { return m_showBounds; }
+    void setShowBounds(bool on) {
+        m_showBounds = on;
+        if (!on)
+            m_selected = -1;
+        paintOverlay();
+    }
+
+    QString selectionSummary() const {
+        if (m_selected < 0 || m_selected >= m_objects.size())
+            return {};
+        const PdfDocument::PageObject& o = m_objects.at(m_selected);
+        const char* kind = "object";
+        switch (o.kind) {
+        case PdfDocument::ObjectKind::Text: kind = "text"; break;
+        case PdfDocument::ObjectKind::Path: kind = "path"; break;
+        case PdfDocument::ObjectKind::Image: kind = "image"; break;
+        case PdfDocument::ObjectKind::Form: kind = "form"; break;
+        case PdfDocument::ObjectKind::Shading: kind = "shading"; break;
+        case PdfDocument::ObjectKind::Other: break;
+        }
+        QString text = QStringLiteral("%1 #%2 at (%3, %4)  %5 x %6 pt")
+                           .arg(QString::fromLatin1(kind))
+                           .arg(o.index)
+                           .arg(o.bounds.left(), 0, 'f', 1)
+                           .arg(o.bounds.top(), 0, 'f', 1)
+                           .arg(o.bounds.width(), 0, 'f', 1)
+                           .arg(o.bounds.height(), 0, 'f', 1);
+        if (!o.text.trimmed().isEmpty())
+            text += QStringLiteral("  \"%1\"").arg(o.text.simplified().left(40));
+        return text;
+    }
+
+    // Repeated clicks on the same spot cycle through overlapping objects, so a
+    // value sitting on top of its underline is still reachable.
+    void selectAt(const QPointF& pagePt) {
+        QList<int> hits;
+        for (int i = m_objects.size() - 1; i >= 0; --i) // topmost first
+            if (m_objects.at(i).bounds.adjusted(-2, -2, 2, 2).contains(pagePt))
+                hits << i;
+        if (hits.isEmpty()) {
+            m_selected = -1;
+            m_hits.clear();
+        } else {
+            if (hits != m_hits) {
+                m_hits = hits;
+                m_hitIndex = 0;
+            } else {
+                m_hitIndex = (m_hitIndex + 1) % m_hits.size();
+            }
+            m_selected = m_hits.at(m_hitIndex);
+        }
+        paintOverlay();
+    }
+
+    bool selectionInside(const QPointF& pagePt) const {
+        return m_selected >= 0 && m_selected < m_objects.size() &&
+               m_objects.at(m_selected).bounds.adjusted(-2, -2, 2, 2).contains(pagePt);
+    }
+
+    bool moveSelected(double dx, double dy) {
+        if (m_selected < 0 || m_selected >= m_objects.size())
+            return false;
+        const int objIndex = m_objects.at(m_selected).index;
+        if (!m_doc.moveObject(m_page, objIndex, dx, dy))
+            return false;
+        m_undo.append({m_page, objIndex, dx, dy});
+        render(); // bounds moved, so the display list is stale
+        return true;
+    }
+
+    bool undoMove() {
+        if (m_undo.isEmpty())
+            return false;
+        const MoveCmd c = m_undo.takeLast();
+        if (c.page != m_page)
+            gotoPage(c.page);
+        const bool ok = m_doc.moveObject(c.page, c.index, -c.dx, -c.dy);
+        render();
+        return ok;
+    }
+    bool canUndo() const { return !m_undo.isEmpty(); }
 
     // --- search: page-granular; highlights every match on the found page ---
     bool search(const QString& term, int fromPage) {
@@ -329,6 +453,8 @@ protected:
                 if (m_tool == Tool::Ink) {
                     m_stroke.clear();
                     m_stroke << toPagePt(m_dragStart);
+                } else if (m_showBounds && selectionInside(toPagePt(m_dragStart))) {
+                    m_draggingObject = true; // drag the object, not a marquee
                 } else {
                     m_rubber->setGeometry(QRect(m_dragStart, QSize()));
                     m_rubber->show();
@@ -358,6 +484,13 @@ protected:
                     return true;
                 }
                 m_rubber->hide();
+                if (m_draggingObject) {
+                    m_draggingObject = false;
+                    const QPointF delta = toPagePt(end) - toPagePt(m_dragStart);
+                    if (!delta.isNull())
+                        moveSelected(delta.x(), delta.y()); // one undo entry per drag
+                    return true;
+                }
                 if ((end - m_dragStart).manhattanLength() < 4) {
                     handleClick(toPagePt(end));
                 } else {
@@ -370,7 +503,19 @@ protected:
                 return true;
             }
             break;
-        case QEvent::KeyPress:
+        case QEvent::KeyPress: {
+            const auto* key = static_cast<QKeyEvent*>(ev);
+            if (m_showBounds && m_selected >= 0) {
+                // Shift = coarse nudge. Page space is points, so 1pt is 1/72in.
+                const double step = (key->modifiers() & Qt::ShiftModifier) ? 10.0 : 1.0;
+                switch (key->key()) {
+                case Qt::Key_Left: moveSelected(-step, 0); return true;
+                case Qt::Key_Right: moveSelected(step, 0); return true;
+                case Qt::Key_Up: moveSelected(0, -step); return true;
+                case Qt::Key_Down: moveSelected(0, step); return true;
+                default: break;
+                }
+            }
             if (m_doc.hasForms()) {
                 const auto* ke = static_cast<QKeyEvent*>(ev);
                 if (ke->key() == Qt::Key_Backspace) {
@@ -385,6 +530,7 @@ protected:
                 }
             }
             break;
+        }
         default:
             break;
         }
@@ -399,6 +545,10 @@ private:
     void handleClick(const QPointF& pagePt) {
         m_lastPagePt = pagePt;
         clearSelection();
+        if (m_showBounds) { // object mode owns the click; links and forms do not
+            selectAt(pagePt);
+            return;
+        }
         if (m_doc.hasForms()) { // toggle checkboxes, focus text fields
             m_doc.formClick(m_page, pagePt);
             render();
@@ -456,6 +606,24 @@ private:
     QString m_searchTerm;
     QList<QRectF> m_searchRects;
     int m_searchPageIdx = -1;
+
+    // --- object mode ---
+    struct MoveCmd {
+        int page;
+        int index;
+        double dx;
+        double dy;
+    };
+    QImage m_baseImage; // last PDFium render; overlays composite onto a copy
+    QList<PdfDocument::PageObject> m_objects;
+    QList<int> m_hits; // objects under the last click, topmost first
+    int m_hitIndex = 0;
+    int m_selected = -1;
+    bool m_showBounds = false;
+    bool m_draggingObject = false;
+    // ponytail: move-only undo by inverse translate. The full command journal
+    // arrives with text and path editing; this covers all that is undoable now.
+    QList<MoveCmd> m_undo;
 };
 
 class MainWindow : public QMainWindow {
@@ -642,8 +810,30 @@ private:
         edit->addAction(tr("&Find"), QKeySequence::Find, this,
                         [this] { m_searchEdit->setFocus(); });
 
+        // Object mode: boundaries + selection + movement. Ctrl+B gates it so a
+        // plain click keeps following links and filling form fields.
+        m_boundsAct = new QAction(tr("Show Object &Boundaries"), this);
+        m_boundsAct->setCheckable(true);
+        m_boundsAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_B));
+        QObject::connect(m_boundsAct, &QAction::toggled, this, [this](bool on) {
+            if (auto* t = tab())
+                t->setShowBounds(on);
+            statusBar()->showMessage(on ? tr("Object mode: click to select, drag or "
+                                             "arrow keys to move, Ctrl+Z to undo")
+                                       : tr("Object mode off"));
+        });
+        m_undoMoveAct = new QAction(tr("&Undo Move"), this);
+        m_undoMoveAct->setShortcut(QKeySequence::Undo);
+        QObject::connect(m_undoMoveAct, &QAction::triggered, this, [this] {
+            if (auto* t = tab())
+                statusBar()->showMessage(t->undoMove() ? tr("Move undone")
+                                                       : tr("Nothing to undo"));
+        });
+
         // View
         QMenu* view = menuBar()->addMenu(tr("&View"));
+        view->addAction(m_boundsAct);
+        view->addSeparator();
         view->addAction(m_zoomInAct);
         view->addAction(m_zoomOutAct);
         view->addAction(m_fitPageAct);
@@ -1077,6 +1267,10 @@ private:
         entry(m_signAct, tr("Image / signature"));
         entry(m_pageNumAct, tr("Header and footer"));
         entry(m_watermarkAct, tr("Watermark"));
+
+        section(tr("OBJECTS"));
+        entry(m_boundsAct, tr("Show boundaries"));
+        entry(m_undoMoveAct, tr("Undo move"));
 
         section(tr("EDIT TEXT"));
         entry(m_scanAct, tr("Scan text on page"));
@@ -1787,7 +1981,8 @@ private:
               m_toImagesAct, m_toJpgAct, m_toTextAct, m_copyAct, m_redactAct, m_compareAct,
               m_copyFileAct, m_copyPathAct, m_revealAct, m_cropAct, m_moveAct,
               m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct,
-              m_editTextAct, m_editBoxAct, m_emailAct, m_scanAct})
+              m_editTextAct, m_editBoxAct, m_emailAct, m_scanAct, m_boundsAct,
+              m_undoMoveAct})
             a->setEnabled(loaded);
 #ifdef ANGRA_HAVE_QPDF
         for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
@@ -1801,8 +1996,18 @@ private:
             m_copyAct->setEnabled(!t->selectionText().isEmpty());
             m_highlightAct->setEnabled(!t->selectionRects().isEmpty());
             m_squareAct->setEnabled(!t->selectionRects().isEmpty());
+            m_undoMoveAct->setEnabled(t->canUndo());
+            // Blocked: setChecked would fire toggled -> setShowBounds -> repaint
+            // -> updateUi, bouncing back through here on every tab switch.
+            {
+                const QSignalBlocker block(m_boundsAct);
+                m_boundsAct->setChecked(t->showBounds());
+            }
+            const QString sel = t->selectionSummary();
             m_pageLabel->setText(
-                tr("Page %1 of %2").arg(t->page() + 1).arg(t->doc().pageCount()));
+                sel.isEmpty()
+                    ? tr("Page %1 of %2").arg(t->page() + 1).arg(t->doc().pageCount())
+                    : sel);
             const int idx = m_tabs->currentIndex();
             QString title = QFileInfo(t->doc().filePath()).fileName();
             if (t->doc().isModified())
@@ -1838,7 +2043,8 @@ private:
             *m_cropAct = nullptr, *m_moveAct = nullptr, *m_pageNumAct = nullptr,
             *m_watermarkAct = nullptr, *m_extractImgAct = nullptr, *m_addTextAct = nullptr,
             *m_signAct = nullptr, *m_editTextAct = nullptr, *m_editBoxAct = nullptr,
-            *m_emailAct = nullptr, *m_scanAct = nullptr;
+            *m_emailAct = nullptr, *m_scanAct = nullptr, *m_boundsAct = nullptr,
+            *m_undoMoveAct = nullptr;
 #ifdef ANGRA_HAVE_QPDF
     QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
             *m_optimizeAct = nullptr, *m_repairAct = nullptr;
