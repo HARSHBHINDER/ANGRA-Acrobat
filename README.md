@@ -63,4 +63,5 @@ pwsh scripts/gen-checksums.ps1          # -> dist/windows/SHA256SUMS.txt
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Personal, non-commercial use only — see [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

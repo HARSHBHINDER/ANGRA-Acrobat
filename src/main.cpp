@@ -46,8 +46,11 @@
 #include <QStyle>
 #include <QTabWidget>
 #include <QToolBar>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QUrl>
+#include <QUrlQuery>
+#include <QVBoxLayout>
 #include <algorithm>
 #include <cstdio>
 #include <functional>
@@ -479,6 +482,7 @@ public:
         m_bookmarkDock = dock;
 
         buildToolbarAndMenus();
+        buildToolPanel(); // after the menus: it reuses the actions they create
         statusBar()->showMessage(tr("Ready"));
         updateUi();
     }
@@ -612,6 +616,7 @@ private:
 
         // View
         QMenu* view = menuBar()->addMenu(tr("&View"));
+        m_viewMenu = view;
         view->addAction(m_zoomInAct);
         view->addAction(m_zoomOutAct);
         view->addAction(m_fitPageAct);
@@ -785,17 +790,139 @@ private:
                     {QStringLiteral("/select,"),
                      QDir::toNativeSeparators(t->doc().filePath())});
         });
+        m_emailAct = share->addAction(tr("Send by &Email..."), [this] {
+            auto* t = tab();
+            if (!t)
+                return;
+            const QString path = QDir::toNativeSeparators(t->doc().filePath());
+            // mailto: carries no attachment on Windows, so put the file on the
+            // clipboard and tell the user to paste it into the draft.
+            auto* mime = new QMimeData;
+            mime->setUrls({QUrl::fromLocalFile(t->doc().filePath())});
+            QApplication::clipboard()->setMimeData(mime);
+            QUrlQuery q;
+            q.addQueryItem(QStringLiteral("subject"), QFileInfo(path).fileName());
+            q.addQueryItem(QStringLiteral("body"),
+                           tr("Sending: %1\n\nThe file is on your clipboard - press "
+                              "Ctrl+V in the message to attach it.")
+                               .arg(path));
+            QUrl url(QStringLiteral("mailto:"));
+            url.setQuery(q);
+            QDesktopServices::openUrl(url);
+            statusBar()->showMessage(tr("Draft opened; press Ctrl+V to attach"));
+        });
 
         // Help
         QMenu* help = menuBar()->addMenu(tr("&Help"));
+        // The only network call in the app, and only when the user asks: opens
+        // the release page in the default browser. Nothing is sent or fetched
+        // in-process; there is no telemetry and no background check.
+        help->addAction(tr("Check for &Updates"), [this] {
+            QDesktopServices::openUrl(QUrl(QStringLiteral(
+                "https://github.com/HARSHBHINDER/ANGRA-Acrobat/releases/latest")));
+        });
+        help->addSeparator();
         help->addAction(tr("&About %1").arg(theme::kAppName), [this] {
             QMessageBox::about(
                 this, tr("About %1").arg(theme::kAppName),
                 tr("<b>%1</b> %2<br>An offline-first PDF workstation for Windows.<br>"
-                   "Licensed under Apache-2.0. Uses Qt and PDFium; see "
-                   "THIRD_PARTY_NOTICES.md.")
+                   "Personal, non-commercial use only - see LICENSE. Uses Qt, "
+                   "PDFium and qpdf; see THIRD_PARTY_NOTICES.md.")
                     .arg(theme::kAppName, theme::kAppVersion));
         });
+    }
+
+    // Left tool rail. Every action here already exists in the menus - this is
+    // discovery, not new behaviour. QToolButton mirrors its default action, so
+    // updateUi() enables the whole panel for free with no extra wiring.
+    void buildToolPanel() {
+        auto* panel = new QWidget;
+        panel->setObjectName(QStringLiteral("toolPanel"));
+        auto* col = new QVBoxLayout(panel);
+        col->setContentsMargins(9, 2, 9, 14);
+        col->setSpacing(1);
+
+        auto section = [&](const QString& title) {
+            auto* label = new QLabel(title);
+            label->setObjectName(QStringLiteral("toolSection"));
+            col->addWidget(label);
+        };
+        // iconText (not text) is what QToolButton renders, and setting it here
+        // keeps the long, mnemonic-bearing menu text intact.
+        auto entry = [&](QAction* action, const QString& label) {
+            if (!action)
+                return;
+            action->setIconText(label);
+            auto* button = new QToolButton;
+            button->setObjectName(QStringLiteral("toolButton"));
+            button->setDefaultAction(action);
+            button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+            button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+            button->setCursor(Qt::PointingHandCursor);
+            col->addWidget(button);
+        };
+
+        section(tr("MODIFY PAGE"));
+        entry(m_rotateAct, tr("Rotate page"));
+        entry(m_insertAct, tr("Insert pages"));
+        entry(m_deletePageAct, tr("Delete page"));
+        entry(m_extractAct, tr("Extract page"));
+        entry(m_moveAct, tr("Organize pages"));
+        entry(m_cropAct, tr("Crop to selection"));
+
+        section(tr("ADD CONTENT"));
+        entry(m_addTextAct, tr("Text"));
+        entry(m_signAct, tr("Image / signature"));
+        entry(m_pageNumAct, tr("Header and footer"));
+        entry(m_watermarkAct, tr("Watermark"));
+
+        section(tr("EDIT TEXT"));
+        entry(m_editTextAct, tr("Edit text at click"));
+        entry(m_editBoxAct, tr("Reflow text box"));
+
+        section(tr("COMMENT"));
+        entry(m_highlightAct, tr("Highlight"));
+        entry(m_noteAct, tr("Sticky note"));
+        entry(m_squareAct, tr("Rectangle"));
+        entry(m_inkToolAct, tr("Draw"));
+
+        section(tr("ORGANIZE"));
+        entry(m_mergeAct, tr("Combine files"));
+        entry(m_splitAct, tr("Split into pages"));
+        entry(m_extractImgAct, tr("Extract images"));
+        entry(m_flattenAct, tr("Flatten annotations"));
+
+        section(tr("CONVERT"));
+        entry(m_toImagesAct, tr("PDF to PNG"));
+        entry(m_toJpgAct, tr("PDF to JPG"));
+        entry(m_toTextAct, tr("PDF to text"));
+
+        section(tr("PROTECT"));
+        entry(m_redactAct, tr("Redact a PDF"));
+#ifdef ANGRA_HAVE_QPDF
+        entry(m_encryptAct, tr("Password protect"));
+        entry(m_decryptAct, tr("Remove password"));
+        entry(m_sanitizeAct, tr("Strip metadata"));
+#endif
+
+        section(tr("SHARE"));
+        entry(m_copyFileAct, tr("Copy file"));
+        entry(m_emailAct, tr("Send by email"));
+        entry(m_revealAct, tr("Show in Explorer"));
+        col->addStretch(1);
+
+        auto* scroll = new QScrollArea;
+        scroll->setWidget(panel);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+        auto* dock = new QDockWidget(tr("Tools"), this);
+        dock->setObjectName(QStringLiteral("toolsDock"));
+        dock->setWidget(scroll);
+        dock->setMinimumWidth(206);
+        addDockWidget(Qt::LeftDockWidgetArea, dock);
+        m_viewMenu->addAction(dock->toggleViewAction());
     }
 
     // ---------- commands ----------
@@ -1456,7 +1583,7 @@ private:
               m_toImagesAct, m_toJpgAct, m_toTextAct, m_copyAct, m_redactAct, m_compareAct,
               m_copyFileAct, m_copyPathAct, m_revealAct, m_cropAct, m_moveAct,
               m_pageNumAct, m_watermarkAct, m_extractImgAct, m_addTextAct, m_signAct,
-              m_editTextAct, m_editBoxAct})
+              m_editTextAct, m_editBoxAct, m_emailAct})
             a->setEnabled(loaded);
 #ifdef ANGRA_HAVE_QPDF
         for (QAction* a : {m_encryptAct, m_decryptAct, m_sanitizeAct, m_optimizeAct,
@@ -1490,6 +1617,7 @@ private:
     QLineEdit* m_searchEdit = nullptr;
     QLabel* m_pageLabel = nullptr;
     QMenu* m_recentMenu = nullptr;
+    QMenu* m_viewMenu = nullptr;
 
     QAction *m_openAct = nullptr, *m_saveAct = nullptr, *m_prevAct = nullptr,
             *m_nextAct = nullptr, *m_zoomInAct = nullptr, *m_zoomOutAct = nullptr,
@@ -1504,7 +1632,8 @@ private:
             *m_copyPathAct = nullptr, *m_revealAct = nullptr, *m_toJpgAct = nullptr,
             *m_cropAct = nullptr, *m_moveAct = nullptr, *m_pageNumAct = nullptr,
             *m_watermarkAct = nullptr, *m_extractImgAct = nullptr, *m_addTextAct = nullptr,
-            *m_signAct = nullptr, *m_editTextAct = nullptr, *m_editBoxAct = nullptr;
+            *m_signAct = nullptr, *m_editTextAct = nullptr, *m_editBoxAct = nullptr,
+            *m_emailAct = nullptr;
 #ifdef ANGRA_HAVE_QPDF
     QAction *m_encryptAct = nullptr, *m_decryptAct = nullptr, *m_sanitizeAct = nullptr,
             *m_optimizeAct = nullptr, *m_repairAct = nullptr;
@@ -1571,6 +1700,10 @@ int main(int argc, char** argv) {
     QApplication::setOrganizationName(QStringLiteral("ANGRA"));
     QApplication::setApplicationName(theme::kAppName);
     QApplication::setApplicationVersion(theme::kAppVersion);
+    // Fusion first: it ignores the Windows native theme, so the stylesheet
+    // renders the same on every machine instead of fighting the OS palette.
+    QApplication::setStyle(QStringLiteral("Fusion"));
+    app.setStyleSheet(QString::fromUtf8(theme::kStyleSheet));
     PdfDocument::initLibrary();
     if (const int cli = runCli(QApplication::arguments()); cli >= 0) {
         PdfDocument::shutdownLibrary();

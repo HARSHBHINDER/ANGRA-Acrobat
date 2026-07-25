@@ -173,6 +173,11 @@ int main(int argc, char** argv) {
             found = d.textObjectAt(0, QPointF(70, y), &idx);
         CHECK(idx >= 0);
         CHECK(found.contains(QStringLiteral("editme")));
+        // A click in the blank margin hits nothing and must report -1 rather
+        // than aborting the object scan (regression: empty runs returned early).
+        int idxBlank = 0;
+        CHECK(d.textObjectAt(0, QPointF(5, 5), &idxBlank).isEmpty());
+        CHECK(idxBlank == -1);
         CHECK(d.setTextObject(0, idx, QStringLiteral("changed")));
         const QString path = tmp + QStringLiteral("/angra-test-edit.pdf");
         CHECK(d.saveCopy(path));

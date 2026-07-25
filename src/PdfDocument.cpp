@@ -595,6 +595,9 @@ QString PdfDocument::textObjectAt(int pageIndex, const QPointF& pagePt, int* obj
     const double h = FPDF_GetPageHeightF(page.p);
     const double px = pagePt.x(), py = h - pagePt.y(); // to PDF coords
     const int count = FPDFPage_CountObjects(page.p);
+    // A text run's bounds are only as tall as its glyphs, so an exact hit test
+    // turns clicking a line of 10pt body text into a pixel hunt. Pad the box.
+    constexpr double kHitPad = 3.0;
     // topmost = last in draw order; scan back to front
     for (int i = count - 1; i >= 0; --i) {
         FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page.p, i);
@@ -603,11 +606,11 @@ QString PdfDocument::textObjectAt(int pageIndex, const QPointF& pagePt, int* obj
         float l, b, r, t;
         if (!FPDFPageObj_GetBounds(obj, &l, &b, &r, &t))
             continue;
-        if (px < l || px > r || py < b || py > t)
+        if (px < l - kHitPad || px > r + kHitPad || py < b - kHitPad || py > t + kHitPad)
             continue;
         const unsigned long bytes = FPDFTextObj_GetText(obj, tp.t, nullptr, 0);
         if (bytes < 2)
-            return {};
+            continue; // empty or undecodable run: keep looking beneath it
         QVarLengthArray<unsigned short, 256> buf(bytes / 2);
         FPDFTextObj_GetText(obj, tp.t, buf.data(), bytes);
         if (objIndex)
