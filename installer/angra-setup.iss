@@ -25,6 +25,8 @@ Name: pdfassoc; Description: "Associate .pdf files with {#AppName}"; Flags: unch
 [Files]
 Source: "..\build\ANGRA.exe"; DestDir: "{app}"
 Source: "..\build\deploy\*"; DestDir: "{app}"; Flags: recursesubdirs
+Source: "..\build\pdfium.dll"; DestDir: "{app}"
+Source: "..\build\qpdf*.dll"; DestDir: "{app}"
 Source: "..\LICENSE"; DestDir: "{app}"
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"
 
