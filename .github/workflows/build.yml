@@ -27,8 +27,14 @@ jobs:
 
       - name: Get prebuilt qpdf
         shell: pwsh
+        # Runners share outbound IPs, so the anonymous API limit of 60/hour is
+        # routinely already spent by other jobs on the same address. The
+        # built-in token raises it to 1000/hour and needs no secret configured.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $rel = Invoke-RestMethod https://api.github.com/repos/qpdf/qpdf/releases/latest
+          $rel = Invoke-RestMethod https://api.github.com/repos/qpdf/qpdf/releases/latest `
+                   -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" }
           $asset = $rel.assets | Where-Object name -match "msvc64.zip$" | Select-Object -First 1
           curl -L -o qpdf.zip $asset.browser_download_url
           Expand-Archive qpdf.zip -DestinationPath qpdf-x
