@@ -79,6 +79,29 @@ QToolBar::separator { background: #2a3341; width: 1px; margin: 5px 7px; }
 #toolButton:pressed { background: #16394a; }
 #toolButton:disabled { color: #576274; }
 
+/* --- start screen: shown whenever no document is open --- */
+#startScreen { background: #0d1117; }
+#startTitle {
+    color: #f0f5fa;
+    font-size: 30px;
+    font-weight: 300;
+    letter-spacing: 5px;
+    background: transparent;
+}
+#startSubtitle { color: #6f7c8c; font-size: 12px; background: transparent; }
+#startHint { color: #55606f; font-size: 11px; background: transparent; }
+#startRecents { background: #131922; border: 1px solid #222a36; border-radius: 7px; }
+/* Explicit, rather than relying on :default outside a dialog. */
+#startScreen QPushButton {
+    background: #17708a;
+    border: 1px solid #29d3f0;
+    color: #ffffff;
+    padding: 10px 22px;
+    font-size: 13px;
+}
+#startScreen QPushButton:hover { background: #1c86a3; }
+#startScreen QPushButton:pressed { background: #145f75; }
+
 /* --- tabs --- */
 QTabWidget::pane { border: none; background: #0d1117; }
 QTabBar { background: #10141a; qproperty-drawBase: 0; }

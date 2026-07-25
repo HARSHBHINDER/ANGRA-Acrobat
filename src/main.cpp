@@ -16,6 +16,8 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QDockWidget>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QHBoxLayout>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -42,6 +44,7 @@
 #include <QSettings>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTabWidget>
@@ -457,11 +460,18 @@ public:
         setWindowTitle(theme::kAppName);
         resize(1200, 850);
 
+        setAcceptDrops(true);
+
         m_tabs = new QTabWidget;
         m_tabs->setTabsClosable(true);
         m_tabs->setMovable(true);
         m_tabs->setDocumentMode(true);
-        setCentralWidget(m_tabs);
+        // Stack, not the tab widget directly: an empty QTabWidget is a grey
+        // void, so index 0 holds a start screen and index 1 the documents.
+        m_stack = new QStackedWidget;
+        m_stack->addWidget(buildStartScreen());
+        m_stack->addWidget(m_tabs);
+        setCentralWidget(m_stack);
         QObject::connect(m_tabs, &QTabWidget::tabCloseRequested, m_tabs,
                          [this](int i) { closeTab(i); });
         QObject::connect(m_tabs, &QTabWidget::currentChanged, m_tabs,
@@ -484,6 +494,7 @@ public:
         buildToolbarAndMenus();
         buildToolPanel(); // after the menus: it reuses the actions they create
         statusBar()->showMessage(tr("Ready"));
+        syncCentral();
         updateUi();
     }
 
@@ -503,11 +514,25 @@ public:
         const QString name = QFileInfo(path).fileName();
         m_tabs->setCurrentIndex(m_tabs->addTab(t, name));
         addRecent(path);
+        syncCentral();
         refreshPanels();
         statusBar()->showMessage(tr("Opened %1 (%2 pages)").arg(name).arg(t->doc().pageCount()));
     }
 
 protected:
+    void dragEnterEvent(QDragEnterEvent* ev) override {
+        if (ev->mimeData()->hasUrls())
+            ev->acceptProposedAction();
+    }
+
+    void dropEvent(QDropEvent* ev) override {
+        for (const QUrl& url : ev->mimeData()->urls()) {
+            const QString path = url.toLocalFile();
+            if (path.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive))
+                openPath(path);
+        }
+    }
+
     void closeEvent(QCloseEvent* ev) override {
         for (int i = 0; i < m_tabs->count(); ++i) {
             if (tabAt(i)->doc().isModified()) {
@@ -832,6 +857,73 @@ private:
         });
     }
 
+    // Start screen. Recents come from the same QSettings list the File menu
+    // already maintains, so there is no second store to keep in sync.
+    QWidget* buildStartScreen() {
+        auto* page = new QWidget;
+        page->setObjectName(QStringLiteral("startScreen"));
+        auto* col = new QVBoxLayout(page);
+        col->setAlignment(Qt::AlignCenter);
+        col->setSpacing(0);
+
+        auto label = [&](const QString& text, const char* id) {
+            auto* l = new QLabel(text);
+            l->setObjectName(QString::fromLatin1(id));
+            l->setAlignment(Qt::AlignCenter);
+            return l;
+        };
+
+        auto* open = new QPushButton(tr("Open a PDF"));
+        open->setDefault(true);
+        open->setMinimumWidth(210);
+        open->setCursor(Qt::PointingHandCursor);
+        QObject::connect(open, &QPushButton::clicked, open, [this] { openDialog(); });
+
+        m_recentLabel = label(tr("RECENT"), "toolSection");
+        m_recentList = new QListWidget;
+        m_recentList->setObjectName(QStringLiteral("startRecents"));
+        m_recentList->setFixedWidth(370);
+        m_recentList->setMaximumHeight(184);
+        QObject::connect(m_recentList, &QListWidget::itemClicked, m_recentList,
+                         [this](QListWidgetItem* item) {
+                             openPath(item->data(Qt::UserRole).toString());
+                         });
+
+        col->addWidget(label(QString::fromUtf8(theme::kAppName), "startTitle"));
+        col->addSpacing(7);
+        col->addWidget(label(tr("Offline PDF workstation - nothing leaves this machine"),
+                             "startSubtitle"));
+        col->addSpacing(27);
+        col->addWidget(open, 0, Qt::AlignCenter);
+        col->addSpacing(11);
+        col->addWidget(label(tr("or drop a PDF anywhere in this window"), "startHint"));
+        col->addSpacing(30);
+        col->addWidget(m_recentLabel, 0, Qt::AlignCenter);
+        col->addWidget(m_recentList, 0, Qt::AlignCenter);
+        return page;
+    }
+
+    // Start screen when there is nothing open, documents otherwise.
+    void syncCentral() {
+        const bool empty = m_tabs->count() == 0;
+        if (empty) {
+            m_recentList->clear();
+            for (const QString& path :
+                 QSettings().value("recentFiles").toStringList()) {
+                if (!QFileInfo::exists(path)) // a stale entry is worse than none
+                    continue;
+                auto* item = new QListWidgetItem(QFileInfo(path).fileName());
+                item->setToolTip(QDir::toNativeSeparators(path));
+                item->setData(Qt::UserRole, path);
+                m_recentList->addItem(item);
+            }
+            const bool any = m_recentList->count() > 0;
+            m_recentList->setVisible(any);
+            m_recentLabel->setVisible(any);
+        }
+        m_stack->setCurrentIndex(empty ? 0 : 1);
+    }
+
     // Left tool rail. Every action here already exists in the menus - this is
     // discovery, not new behaviour. QToolButton mirrors its default action, so
     // updateUi() enables the whole panel for free with no extra wiring.
@@ -972,6 +1064,7 @@ private:
         }
         m_tabs->removeTab(index);
         delete t;
+        syncCentral();
         refreshPanels();
     }
 
@@ -1612,6 +1705,9 @@ private:
     }
 
     QTabWidget* m_tabs = nullptr;
+    QStackedWidget* m_stack = nullptr;
+    QListWidget* m_recentList = nullptr;
+    QLabel* m_recentLabel = nullptr;
     QTreeWidget* m_bookmarkTree = nullptr;
     QDockWidget* m_bookmarkDock = nullptr;
     QLineEdit* m_searchEdit = nullptr;
