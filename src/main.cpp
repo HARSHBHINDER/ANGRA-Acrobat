@@ -348,16 +348,20 @@ public:
 
     // Text writes go through here so every one of them lands in history.
     // repaint=false lets a batch apply many rows and re-render once.
-    bool replaceText(int objIndex, const QString& before, const QString& after,
-                     bool repaint = true) {
+    bool replaceTextOn(int page, int objIndex, const QString& before,
+                       const QString& after, bool repaint = true) {
         if (before == after)
             return false; // an unchanged row is not an edit
-        if (!m_doc.setTextObject(m_page, objIndex, after))
+        if (!m_doc.setTextObject(page, objIndex, after))
             return false;
-        pushEdit({Edit::Kind::Text, m_page, objIndex, 0, 0, before, after});
+        pushEdit({Edit::Kind::Text, page, objIndex, 0, 0, before, after});
         if (repaint)
             render();
         return true;
+    }
+    bool replaceText(int objIndex, const QString& before, const QString& after,
+                     bool repaint = true) {
+        return replaceTextOn(m_page, objIndex, before, after, repaint);
     }
 
     bool undoEdit() {
